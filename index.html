@@ -147,10 +147,11 @@
     background:var(--surface); color:var(--ink-soft); cursor:pointer;
   }
   .seg button.active{background:var(--accent); color:var(--accent-ink);}
-  input.search{
+  .search{
     font:inherit; font-size:13px; padding:8px 12px; border-radius:8px; border:1px solid var(--border);
-    background:var(--surface); color:var(--ink); min-width:200px; flex:1;
+    background:var(--surface); color:var(--ink);
   }
+  input.search{min-width:200px; flex:1;}
   .chip{
     font-size:12px; font-weight:600; padding:5px 11px; border-radius:20px; border:1px solid var(--border);
     background:var(--surface); color:var(--ink-soft); cursor:pointer;
@@ -194,8 +195,7 @@
   .was{color:var(--ink-muted); text-decoration:line-through; font-size:11.5px; display:block;}
 
   /* ---------- stats ---------- */
-  .stat-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:16px;}
-  @media (max-width:700px){.stat-grid{grid-template-columns:1fr;}}
+  .stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:16px;}
   .stat-tile{
     background:var(--surface); border:1px solid var(--border); border-radius:14px;
     padding:18px 20px; box-shadow:var(--shadow-sm);
@@ -229,6 +229,37 @@
     display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700;
     color:var(--accent-strong); background:var(--accent-soft); padding:3px 9px; border-radius:20px;
   }
+
+  /* ---------- schematic (iso drawing) ---------- */
+  .iso-card{margin-top:16px;}
+  .iso-svg{width:100%; height:auto; display:block; background:var(--surface-sunken); border-radius:10px;}
+  .iso-ghost{fill:none; stroke:var(--ink-muted); stroke-width:2; stroke-dasharray:6 5; opacity:.55;}
+  .iso-main{fill:none; stroke:var(--accent); stroke-width:2.5;}
+  .iso-node{cursor:pointer;}
+  .iso-dot{stroke:var(--surface-sunken); stroke-width:1.5;}
+  .iso-added .iso-dot{fill:var(--good);}
+  .iso-modified .iso-dot{fill:var(--warn);}
+  .iso-removed .iso-dot{fill:var(--surface-sunken); stroke:var(--bad); stroke-width:2; stroke-dasharray:2 2;}
+  .iso-unchanged .iso-dot{fill:var(--ink-muted);}
+  .iso-support-mark{fill:none; stroke:var(--ink-soft); stroke-width:1.2; opacity:.8;}
+  .iso-label{font-family:var(--font-mono); font-size:11px; fill:var(--ink-soft);}
+
+  /* ---------- return conditions ---------- */
+  .return-form{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+  select.search{appearance:auto;}
+  .return-item{
+    border:1px solid var(--border); border-radius:10px; padding:12px 14px;
+    margin-bottom:10px; background:var(--surface-alt);
+  }
+  .return-top{display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;}
+  .return-content{margin:0 0 10px; font-size:13.5px; color:var(--ink);}
+  .return-bottom{display:flex; align-items:center; gap:10px; justify-content:space-between; flex-wrap:wrap;}
+  .chip-tag{font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap;}
+  .chip-tag.from-stress{background:var(--accent-soft); color:var(--accent-strong);}
+  .chip-tag.from-piping{background:var(--surface-sunken); color:var(--ink-soft);}
+  .node-badge{background:var(--surface-sunken); color:var(--ink-soft);}
+  .return-summary{display:flex; gap:16px; margin-bottom:14px; font-size:12.5px; color:var(--ink-soft); flex-wrap:wrap;}
+  .return-summary b{color:var(--ink); font-family:var(--font-mono);}
 </style>
 </head>
 <body>
@@ -251,7 +282,8 @@
     <button class="tab-btn" id="tabbtn-import" role="tab" aria-selected="true" data-target="panel-import">① 数据导入</button>
     <button class="tab-btn" id="tabbtn-annot" role="tab" aria-selected="false" data-target="panel-annot">② 标注清单</button>
     <button class="tab-btn" id="tabbtn-diff" role="tab" aria-selected="false" data-target="panel-diff">③ 版本对比</button>
-    <button class="tab-btn" id="tabbtn-stats" role="tab" aria-selected="false" data-target="panel-stats">④ 效果统计</button>
+    <button class="tab-btn" id="tabbtn-returns" role="tab" aria-selected="false" data-target="panel-returns">④ 返回条件跟踪</button>
+    <button class="tab-btn" id="tabbtn-stats" role="tab" aria-selected="false" data-target="panel-stats">⑤ 效果统计</button>
   </div>
 
   <!-- ================= PANEL 1: 数据导入 ================= -->
@@ -350,10 +382,47 @@
           <tbody id="diff-tbody"></tbody>
         </table>
       </div>
+
+      <div class="iso-card">
+        <h2>变更点示意图（等轴测投影）</h2>
+        <p class="desc">按节点坐标以 30° 轴测角投影生成，虚线为前版走向，实线为现版走向；方框标记的节点带支架。示意拓扑与相对位置，非精确出图比例。</p>
+        <div id="iso-svg-wrap"></div>
+      </div>
     </div>
   </section>
 
-  <!-- ================= PANEL 4: 效果统计 ================= -->
+  <!-- ================= PANEL 4: 返回条件跟踪 ================= -->
+  <section class="panel" id="panel-returns">
+    <div class="card">
+      <h2>登记新的返回条件</h2>
+      <p class="desc">应力专业提出的返回意见（支架调整、走向要求等）与配管专业的处理状态在这里集中跟踪，避免版次多了以后意见散落在邮件、纸质单里被遗漏。</p>
+      <div class="return-form">
+        <select id="return-node" class="search"></select>
+        <select id="return-from" class="search">
+          <option>应力专业</option>
+          <option>配管专业</option>
+        </select>
+        <input type="text" id="return-content" class="search" placeholder="返回条件 / 处理意见内容…" style="flex:2; min-width:220px;">
+        <button class="btn primary" id="btn-add-return">提交</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>返回条件清单</h2>
+      <div class="return-summary">
+        <span>待处理：<b id="return-count-pending">0</b></span>
+        <span>已处理：<b id="return-count-done">0</b></span>
+      </div>
+      <div class="toolbar">
+        <button class="chip active" data-return-filter="all">全部</button>
+        <button class="chip" data-return-filter="待处理">仅看待处理</button>
+        <button class="chip" data-return-filter="已处理">仅看已处理</button>
+      </div>
+      <div id="return-list"></div>
+    </div>
+  </section>
+
+  <!-- ================= PANEL 5: 效果统计 ================= -->
   <section class="panel" id="panel-stats">
     <div class="card">
       <h2 style="display:flex;align-items:center;gap:8px;">效果统计 <span class="badge-demo">示例数据</span></h2>
@@ -373,6 +442,11 @@
           <div class="label">版次比对环节（示例）</div>
           <div class="value">30 <small>分钟 →</small> 数秒</div>
           <div class="sub">人工逐条核对 → 自动生成变更清单</div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">待处理返回条件</div>
+          <div class="value" id="stat-pending-returns">—</div>
+          <div class="sub" id="stat-pending-returns-sub">已处理 · 项</div>
         </div>
       </div>
 
@@ -456,7 +530,16 @@
   var FIELDS = ['x','y','z','dn','sch','support','note'];
   var CSV_HEADERS = ['节点号','X','Y','Z','DN','壁厚等级','支架','备注'];
 
-  var state = { v1: SAMPLE_V1, v2: SAMPLE_V2, sourceLabel: '示例数据', annotVersion: 'v2', diffFilter: 'all' };
+  var RETURN_SEED = [
+    {id:1, node:45, from:'应力专业', content:'该位置需增加导向支架，控制管道横向振动幅度', status:'待处理', date:'2026-09-10'},
+    {id:2, node:40, from:'应力专业', content:'建议将标高上调 300mm，增加此处柔性，降低一次应力', status:'已处理', date:'2026-09-08'},
+    {id:3, node:60, from:'配管专业', content:'现场核实该支架与钢结构存在冲突，建议评估是否可取消', status:'已处理', date:'2026-09-07'}
+  ];
+
+  var state = {
+    v1: SAMPLE_V1, v2: SAMPLE_V2, sourceLabel: '示例数据', annotVersion: 'v2', diffFilter: 'all',
+    returns: RETURN_SEED.slice(), returnFilter: 'all', nextReturnId: 4
+  };
 
   /* ---------------- helpers ---------------- */
   function byNode(list){
@@ -574,6 +657,104 @@
     }).join('') || '<tr><td colspan="7" class="muted" style="padding:16px;">没有满足条件的节点</td></tr>';
   }
 
+  /* ---------------- render: isometric schematic ---------------- */
+  function isoProject(n){
+    var rad = Math.PI / 6; /* 30 deg */
+    return { x: (n.x - n.y) * Math.cos(rad), y: (n.x + n.y) * Math.sin(rad) - n.z };
+  }
+
+  function renderSchematic(){
+    var wrap = document.getElementById('iso-svg-wrap');
+    if(!wrap) return;
+    var v1 = state.v1, v2 = state.v2;
+    var pts1 = v1.slice().sort(function(a,b){return a.node-b.node;}).map(isoProject);
+    var pts2 = v2.slice().sort(function(a,b){return a.node-b.node;}).map(isoProject);
+    var all = pts1.concat(pts2);
+    if(!all.length){ wrap.innerHTML = '<p class="muted" style="padding:16px;">暂无数据</p>'; return; }
+    var xs = all.map(function(p){return p.x;}), ys = all.map(function(p){return p.y;});
+    var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
+    var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+    var W = 880, H = 380, PAD = 46;
+    var spanX = Math.max(maxX - minX, 1), spanY = Math.max(maxY - minY, 1);
+    var scale = Math.min((W - 2*PAD) / spanX, (H - 2*PAD) / spanY);
+    function toSvg(p){ return { x: PAD + (p.x - minX) * scale, y: PAD + (p.y - minY) * scale }; }
+    function polyline(pts, cls){
+      return '<polyline points="'+pts.map(function(p){ var s = toSvg(p); return s.x.toFixed(1)+','+s.y.toFixed(1); }).join(' ')+'" class="'+cls+'"/>';
+    }
+
+    var parts = [];
+    parts.push(polyline(pts1, 'iso-ghost'));
+    parts.push(polyline(pts2, 'iso-main'));
+
+    var m1 = byNode(v1), m2 = byNode(v2);
+    var diffs = computeDiff(v1, v2);
+    diffs.forEach(function(d){
+      var basis = d.status === 'removed' ? m1[d.node] : m2[d.node];
+      if(!basis) return;
+      var s = toSvg(isoProject(basis));
+      var hasSupport = basis.support && basis.support !== '—' && basis.support.trim() !== '';
+      parts.push('<g class="iso-node iso-'+d.status+'">' +
+        (hasSupport ? '<rect x="'+(s.x-7).toFixed(1)+'" y="'+(s.y-7).toFixed(1)+'" width="14" height="14" class="iso-support-mark"/>' : '') +
+        '<circle cx="'+s.x.toFixed(1)+'" cy="'+s.y.toFixed(1)+'" r="5" class="iso-dot"/>' +
+        '<title>节点 '+d.node+'（'+STATUS_LABEL[d.status]+'）'+esc(basis.support||'')+'</title>' +
+        '<text x="'+(s.x+9).toFixed(1)+'" y="'+(s.y-8).toFixed(1)+'" class="iso-label">'+d.node+'</text>' +
+        '</g>');
+    });
+
+    wrap.innerHTML = '<svg viewBox="0 0 '+W+' '+H+'" class="iso-svg" role="img" aria-label="管线等轴测示意图">'+parts.join('')+'</svg>';
+  }
+
+  /* ---------------- render: return conditions ---------------- */
+  function todayStr(){
+    var d = new Date();
+    function p(n){ return String(n).padStart(2,'0'); }
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+  }
+
+  function populateReturnNodeOptions(){
+    var sel = document.getElementById('return-node');
+    if(!sel) return;
+    var current = sel.value;
+    var nodes = Array.from(new Set(state.v1.concat(state.v2).map(function(n){ return n.node; }))).sort(function(a,b){ return a-b; });
+    sel.innerHTML = nodes.map(function(n){ return '<option value="'+n+'">节点 '+n+'</option>'; }).join('');
+    if(nodes.indexOf(Number(current)) >= 0){ sel.value = current; }
+  }
+
+  function renderReturns(){
+    var listEl = document.getElementById('return-list');
+    if(!listEl) return;
+    var list = state.returns.slice().sort(function(a,b){ return b.id - a.id; });
+    if(state.returnFilter !== 'all'){ list = list.filter(function(r){ return r.status === state.returnFilter; }); }
+    listEl.innerHTML = list.map(function(r){
+      var fromCls = r.from === '应力专业' ? 'from-stress' : 'from-piping';
+      var statusCls = r.status === '已处理' ? 'added' : 'modified';
+      var nextLabel = r.status === '已处理' ? '标记为待处理' : '标记为已处理';
+      return '<div class="return-item">' +
+        '<div class="return-top">' +
+          '<span class="status-pill node-badge">节点 '+r.node+'</span>' +
+          '<span class="chip-tag '+fromCls+'">'+esc(r.from)+'</span>' +
+          '<span class="muted" style="margin-left:auto">'+r.date+'</span>' +
+        '</div>' +
+        '<p class="return-content">'+esc(r.content)+'</p>' +
+        '<div class="return-bottom">' +
+          '<span class="status-pill '+statusCls+'"><span class="dot"></span>'+r.status+'</span>' +
+          '<button class="btn" data-toggle-return="'+r.id+'">'+nextLabel+'</button>' +
+        '</div>' +
+      '</div>';
+    }).join('') || '<p class="muted" style="padding:16px 0;">没有满足条件的记录</p>';
+
+    var pending = state.returns.filter(function(r){ return r.status === '待处理'; }).length;
+    var done = state.returns.length - pending;
+    var elPending = document.getElementById('return-count-pending');
+    var elDone = document.getElementById('return-count-done');
+    if(elPending) elPending.textContent = pending;
+    if(elDone) elDone.textContent = done;
+    var statPending = document.getElementById('stat-pending-returns');
+    var statPendingSub = document.getElementById('stat-pending-returns-sub');
+    if(statPending) statPending.textContent = pending + ' 项';
+    if(statPendingSub) statPendingSub.textContent = '已处理 '+done+' 项';
+  }
+
   function renderStats(){
     var diffs = computeDiff(state.v1, state.v2);
     var added = diffs.filter(function(d){return d.status==='added';}).length;
@@ -583,7 +764,10 @@
     document.getElementById('stat-changes-sub').textContent = '新增 '+added+' · 修改 '+modified+' · 删除 '+removed;
   }
 
-  function renderAll(){ renderMeta(); renderAnnot(); renderDiff(); renderStats(); }
+  function renderAll(){
+    renderMeta(); renderAnnot(); renderDiff(); renderSchematic();
+    populateReturnNodeOptions(); renderReturns(); renderStats();
+  }
 
   /* ---------------- tabs ---------------- */
   document.querySelectorAll('.tab-btn').forEach(function(btn){
@@ -661,6 +845,34 @@
       return r;
     });
     triggerDownload(toCSV(rows), '变更清单.csv');
+  });
+
+  /* ---------------- return conditions panel controls ---------------- */
+  document.querySelectorAll('[data-return-filter]').forEach(function(c){
+    c.addEventListener('click', function(){
+      document.querySelectorAll('[data-return-filter]').forEach(function(x){ x.classList.remove('active'); });
+      c.classList.add('active'); state.returnFilter = c.dataset.returnFilter; renderReturns();
+    });
+  });
+  document.getElementById('btn-add-return').addEventListener('click', function(){
+    var nodeSel = document.getElementById('return-node');
+    var fromSel = document.getElementById('return-from');
+    var contentInput = document.getElementById('return-content');
+    var content = contentInput.value.trim();
+    if(!content){ contentInput.focus(); return; }
+    state.returns.push({
+      id: state.nextReturnId++, node: Number(nodeSel.value), from: fromSel.value,
+      content: content, status: '待处理', date: todayStr()
+    });
+    contentInput.value = '';
+    renderReturns();
+  });
+  document.getElementById('return-list').addEventListener('click', function(e){
+    var btn = e.target.closest('[data-toggle-return]');
+    if(!btn) return;
+    var id = Number(btn.getAttribute('data-toggle-return'));
+    var item = state.returns.filter(function(r){ return r.id === id; })[0];
+    if(item){ item.status = item.status === '已处理' ? '待处理' : '已处理'; renderReturns(); }
   });
 
   /* ---------------- local file download (no server / no claude.ai needed) ---------------- */
