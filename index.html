@@ -290,22 +290,22 @@
   <section class="panel active" id="panel-import">
     <div class="card">
       <h2>导入两个版次的模型导出数据</h2>
-      <p class="desc">正式方案中，这里读取的是配管三维软件（SP3D / PDMS / E3D）导出并解析后的结构化数据（如 PCF 解析结果）。当前原型接受同等结构的 CSV 文件，也可以先用示例数据体验完整流程。</p>
+      <p class="desc">正式方案中，这里读取的是配管三维软件（SP3D / PDMS / E3D）导出的 PCF（Piping Component File，ISOGEN 中性格式）数据，或经解析后的结构化数据。当前原型已支持<b>直接上传 PCF 文件</b>（自动解析为节点数据），也接受同等结构的 CSV 文件，或先用示例数据体验完整流程。</p>
 
       <div class="drop-grid">
         <div class="dropzone" id="dz-v1" tabindex="0" role="button" aria-label="上传前一版数据">
           <span class="ver-label">REV. 前版（V1）</span>
-          <div>点击或拖拽 CSV 文件到此处</div>
+          <div>点击或拖拽 PCF / CSV 文件到此处</div>
           <div class="hint">节点号 / 坐标 / 管径壁厚 / 支架 / 备注</div>
           <span class="fname" id="fname-v1"></span>
-          <input type="file" id="file-v1" accept=".csv" hidden>
+          <input type="file" id="file-v1" accept=".csv,.pcf,.txt" hidden>
         </div>
         <div class="dropzone" id="dz-v2" tabindex="0" role="button" aria-label="上传当前版数据">
           <span class="ver-label">REV. 现版（V2）</span>
-          <div>点击或拖拽 CSV 文件到此处</div>
+          <div>点击或拖拽 PCF / CSV 文件到此处</div>
           <div class="hint">节点号 / 坐标 / 管径壁厚 / 支架 / 备注</div>
           <span class="fname" id="fname-v2"></span>
-          <input type="file" id="file-v2" accept=".csv" hidden>
+          <input type="file" id="file-v2" accept=".csv,.pcf,.txt" hidden>
         </div>
       </div>
 
@@ -316,9 +316,10 @@
       </div>
 
       <details class="spec">
-        <summary>CSV 字段说明</summary>
+        <summary>PCF / CSV 字段说明</summary>
         <div class="spec-body">
-          每行一个标注节点，表头需包含：<code class="field">节点号</code>、<code class="field">X</code>、<code class="field">Y</code>、<code class="field">Z</code>（单位 mm）、<code class="field">DN</code>、<code class="field">壁厚等级</code>、<code class="field">支架</code>、<code class="field">备注</code>。节点号是两版数据比对的关键字，请与应力模型中的节点号保持一致。
+          <b>PCF 文件（.pcf / .txt）：</b>直接上传三维设计软件导出的 PCF 文件即可，工具会自动解析 PIPE / ELBOW / TEE / REDUCER / FLANGE / VALVE / SUPPORT 等组件的 END-POINT、CENTRE-POINT 坐标及 BORE1（管径）、SKEY（支架类型）、WALL-THICKNESS 等属性，按坐标去重后生成节点号（10、20、30…）。<u>提示：PCF 各厂商导出细节略有差异，管径换算（BORE1 → DN）与支架识别为近似匹配，首次使用建议与原始模型核对一版，如有偏差可反馈调整解析规则。</u><br><br>
+          <b>CSV 文件（.csv）：</b>每行一个标注节点，表头需包含：<code class="field">节点号</code>、<code class="field">X</code>、<code class="field">Y</code>、<code class="field">Z</code>（单位 mm）、<code class="field">DN</code>、<code class="field">壁厚等级</code>、<code class="field">支架</code>、<code class="field">备注</code>。节点号是两版数据比对的关键字，请与应力模型中的节点号保持一致。
         </div>
       </details>
 
@@ -584,6 +585,108 @@
     return out.sort(function(a,b){ return a.node-b.node; });
   }
 
+  /* ---------------- PCF parsing (best-effort, ISOGEN 常见约定) ---------------- */
+  var NPS_TO_DN = [
+    [0.125,6],[0.25,8],[0.375,10],[0.5,15],[0.75,20],[1,25],[1.25,32],[1.5,40],
+    [2,50],[2.5,65],[3,80],[3.5,90],[4,100],[5,125],[6,150],[8,200],[10,250],
+    [12,300],[14,350],[16,400],[18,450],[20,500],[24,600],[30,750],[36,900],[42,1050],[48,1200]
+  ];
+  var SKEY_LABEL = {
+    'ANC':'固定支架(锚固)','GUI':'导向支架','RES':'限位支架','SPR':'弹簧支架',
+    'VSPR':'可变弹簧支架','CSPR':'恒力弹簧支架','HGR':'吊架','SNB':'滑动支架'
+  };
+  var PCF_COMPONENT_NOTE = {
+    'ELBOW':'弯头','TEE':'三通','REDUCER-CONCENTRIC':'同心异径管','REDUCER-ECCENTRIC':'偏心异径管',
+    'FLANGE':'法兰','VALVE':'阀门','CAP':'管帽','OLET':'支管台','GASKET':'垫片',
+    'BOLT-NUT':'螺栓螺母','INSTRUMENT':'仪表','EQUIPMENT':'设备','NOZZLE':'接管口'
+  };
+  var PCF_TOP_LEVEL = ['PIPE','ELBOW','TEE','REDUCER-CONCENTRIC','REDUCER-ECCENTRIC','FLANGE','VALVE',
+    'SUPPORT','CAP','OLET','GASKET','BOLT-NUT','INSTRUMENT','EQUIPMENT','NOZZLE'];
+
+  function boreToDN(bore, unitsBore){
+    var n = Number(bore);
+    if(!isFinite(n) || !bore) return 0;
+    if(unitsBore === 'INCH'){
+      var best = NPS_TO_DN[0], bestDiff = Infinity;
+      NPS_TO_DN.forEach(function(pair){
+        var diff = Math.abs(pair[0]-n);
+        if(diff < bestDiff){ bestDiff = diff; best = pair; }
+      });
+      return best[1];
+    }
+    return Math.round(n);
+  }
+
+  function parsePCF(text){
+    var lines = text.replace(/\r/g,'').split('\n');
+    var unitsBore = 'MM';
+    var components = [];
+    var current = null;
+
+    lines.forEach(function(raw){
+      if(!raw.trim()) return;
+      var indented = /^[ \t]/.test(raw);
+      var parts = raw.trim().split(/\s+/);
+      var kw = parts[0];
+
+      if(kw === 'UNITS-BORE'){ unitsBore = parts[1]; return; }
+      if(!indented && PCF_TOP_LEVEL.indexOf(kw) >= 0){
+        current = { type: kw, points: [], bore: null, skey: null, item: null, wall: null };
+        components.push(current);
+        return;
+      }
+      if(!current) return;
+
+      if(kw === 'END-POINT' || kw === 'CENTRE-POINT' || kw === 'CO-ORDS'){
+        var x = Number(parts[1]), y = Number(parts[2]), z = Number(parts[3]);
+        if(isFinite(x) && isFinite(y) && isFinite(z)){
+          current.points.push({x:x,y:y,z:z});
+          if(parts[4] && !current.bore) current.bore = parts[4];
+        }
+        return;
+      }
+      if(kw === 'BORE1'){ current.bore = parts[1]; return; }
+      if(kw === 'SKEY'){ current.skey = parts.slice(1).join(' '); return; }
+      if(kw === 'ITEM-CODE'){ current.item = parts.slice(1).join(' '); return; }
+      if(kw === 'WALL-THICKNESS'){ current.wall = parts[1]; return; }
+    });
+
+    var pts = [];
+    function ensurePoint(x,y,z){
+      var EPS = 0.5;
+      for(var i=0;i<pts.length;i++){
+        var p = pts[i];
+        if(Math.abs(p.x-x)<EPS && Math.abs(p.y-y)<EPS && Math.abs(p.z-z)<EPS) return p;
+      }
+      var np = {x:x,y:y,z:z, dn:0, sch:'', support:'', note:[]};
+      pts.push(np);
+      return np;
+    }
+
+    components.forEach(function(c){
+      var dn = boreToDN(c.bore, unitsBore);
+      c.points.forEach(function(pt){
+        var p = ensurePoint(pt.x, pt.y, pt.z);
+        if(dn && !p.dn) p.dn = dn;
+        if(c.wall && !p.sch) p.sch = c.wall;
+        if(c.type === 'SUPPORT'){
+          p.support = c.skey ? (SKEY_LABEL[c.skey] || c.skey) : '支架';
+        } else if(PCF_COMPONENT_NOTE[c.type] && p.note.indexOf(PCF_COMPONENT_NOTE[c.type]) < 0){
+          p.note.push(PCF_COMPONENT_NOTE[c.type]);
+        }
+        if(c.item && p.note.indexOf(c.item) < 0) p.note.push(c.item);
+      });
+    });
+
+    return pts.map(function(p, i){
+      return {
+        node: (i+1)*10,
+        x: Math.round(p.x*10)/10, y: Math.round(p.y*10)/10, z: Math.round(p.z*10)/10,
+        dn: p.dn || 0, sch: p.sch || '', support: p.support || '', note: p.note.join('/')
+      };
+    });
+  }
+
   function computeDiff(v1, v2){
     var m1 = byNode(v1), m2 = byNode(v2);
     var nodes = Object.keys(Object.assign({}, m1, m2)).map(Number).sort(function(a,b){ return a-b; });
@@ -790,14 +893,26 @@
     input.addEventListener('change', function(e){ handleFile(e.target.files[0]); });
     function handleFile(file){
       if(!file) return;
+      var name = file.name || '';
+      var ext = (name.split('.').pop() || '').toLowerCase();
       var reader = new FileReader();
       reader.onload = function(){
-        var rows = parseCSV(String(reader.result));
-        if(!rows.length){ document.getElementById('import-msg').textContent = '未能解析出有效行，请检查表头是否为：'+CSV_HEADERS.join('、'); return; }
+        var text = String(reader.result);
+        var isPCF = ext === 'pcf' || (ext === 'txt' && /\b(PIPING-SPEC|PIPELINE-REFERENCE|END-POINT|UNITS-BORE)\b/.test(text));
+        var rows, kindLabel;
+        if(isPCF){
+          rows = parsePCF(text);
+          kindLabel = 'PCF';
+          if(!rows.length){ document.getElementById('import-msg').textContent = '未能从 PCF 中解析出坐标点，请确认文件包含 END-POINT / CENTRE-POINT 记录。'; return; }
+        } else {
+          rows = parseCSV(text);
+          kindLabel = 'CSV';
+          if(!rows.length){ document.getElementById('import-msg').textContent = '未能解析出有效行，请检查表头是否为：'+CSV_HEADERS.join('、'); return; }
+        }
         state[which] = rows;
         state.sourceLabel = '已上传文件';
         document.getElementById(fnameId).textContent = file.name;
-        document.getElementById('import-msg').textContent = which.toUpperCase()+' 已更新为上传数据（'+rows.length+' 行）。';
+        document.getElementById('import-msg').textContent = which.toUpperCase()+' 已更新为上传数据（'+kindLabel+'，'+rows.length+' 行'+(isPCF?'，管径/支架为自动解析，建议核对':'')+'）。';
         renderAll();
       };
       reader.readAsText(file, 'utf-8');
