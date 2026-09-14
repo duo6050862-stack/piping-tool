@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>配管应力协同台（本地版）</title>
+<style>
+  :root{
+    color-scheme: light;
+    --bg:#F2F5F7; --surface:#FFFFFF; --surface-alt:#EAEEF2; --surface-sunken:#E2E8EC;
+    --border:#D6DDE3; --ink:#16202A; --ink-soft:#59697A; --ink-muted:#8493A1;
+    --accent:#2A6F97; --accent-strong:#1E5678; --accent-ink:#FFFFFF; --accent-soft:#E3EEF4;
+    --good:#0CA30C; --good-soft:#E3F5E1; --warn:#C98A00; --warn-soft:#FCEECB;
+    --bad:#D03B3B; --bad-soft:#FBE6E6;
+    --chart-auto:#2A78D6; --chart-manual:#EB6834;
+    --shadow-sm:0 1px 2px rgba(22,32,42,.07), 0 1px 1px rgba(22,32,42,.04);
+    --radius:10px;
+    --font-sans:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;
+    --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Courier New",monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme: dark;
+      --bg:#0E151B; --surface:#151F28; --surface-alt:#1B2731; --surface-sunken:#0F171E;
+      --border:#2A3944; --ink:#E7EEF3; --ink-soft:#A6B5C2; --ink-muted:#728290;
+      --accent:#6FB4DC; --accent-strong:#8FC6E6; --accent-ink:#08222E; --accent-soft:#1C3542;
+      --good:#3FC13F; --good-soft:#173A1B; --warn:#E8B23D; --warn-soft:#3B2E10;
+      --bad:#E86A6A; --bad-soft:#3B1B1B;
+      --chart-auto:#3987E5; --chart-manual:#D95926;
+      --shadow-sm:0 1px 2px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --bg:#0E151B; --surface:#151F28; --surface-alt:#1B2731; --surface-sunken:#0F171E;
+    --border:#2A3944; --ink:#E7EEF3; --ink-soft:#A6B5C2; --ink-muted:#728290;
+    --accent:#6FB4DC; --accent-strong:#8FC6E6; --accent-ink:#08222E; --accent-soft:#1C3542;
+    --good:#3FC13F; --good-soft:#173A1B; --warn:#E8B23D; --warn-soft:#3B2E10;
+    --bad:#E86A6A; --bad-soft:#3B1B1B;
+    --chart-auto:#3987E5; --chart-manual:#D95926;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.5);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:
+      linear-gradient(var(--bg),var(--bg)) fixed,
+      repeating-linear-gradient(0deg, transparent, transparent 27px, color-mix(in srgb, var(--ink) 4%, transparent) 28px) fixed,
+      repeating-linear-gradient(90deg, transparent, transparent 27px, color-mix(in srgb, var(--ink) 4%, transparent) 28px) fixed;
+    background-color:var(--bg);
+    color:var(--ink); font-family:var(--font-sans); line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{max-width:1100px; margin:0 auto; padding:20px 20px 56px;}
+
+  /* ---------- header ---------- */
+  .topbar{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:22px 24px; box-shadow:var(--shadow-sm); margin-bottom:16px;
+    display:flex; flex-wrap:wrap; gap:18px; justify-content:space-between; align-items:flex-end;
+  }
+  .topbar .eyebrow{
+    font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent);
+    font-weight:600; margin:0 0 6px;
+  }
+  .topbar h1{margin:0; font-size:24px; font-weight:700; letter-spacing:-.01em; text-wrap:balance;}
+  .topbar p.tagline{margin:6px 0 0; color:var(--ink-soft); font-size:14px; max-width:52ch;}
+  .line-card{
+    font-family:var(--font-mono); font-size:12.5px; color:var(--ink-soft);
+    background:var(--surface-alt); border:1px solid var(--border); border-radius:8px;
+    padding:10px 14px; min-width:230px; line-height:1.7;
+  }
+  .line-card b{color:var(--ink); font-weight:600;}
+
+  /* ---------- tabs ---------- */
+  .tabs{
+    display:flex; gap:4px; background:var(--surface); border:1px solid var(--border);
+    border-radius:11px; padding:4px; margin-bottom:16px; box-shadow:var(--shadow-sm);
+    overflow-x:auto;
+  }
+  .tab-btn{
+    appearance:none; border:none; background:transparent; color:var(--ink-soft);
+    font:inherit; font-weight:600; font-size:13.5px; padding:10px 16px; border-radius:8px;
+    cursor:pointer; white-space:nowrap; transition:background .15s,color .15s;
+  }
+  .tab-btn:hover{background:var(--surface-alt); color:var(--ink);}
+  .tab-btn[aria-selected="true"]{background:var(--accent); color:var(--accent-ink);}
+  .tab-btn:focus-visible, button:focus-visible, input:focus-visible, .dropzone:focus-visible{
+    outline:2px solid var(--accent); outline-offset:2px;
+  }
+
+  .panel{display:none; animation:fade .25s ease;}
+  .panel.active{display:block;}
+  @keyframes fade{from{opacity:0; transform:translateY(2px);} to{opacity:1; transform:none;}}
+
+  .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:20px 22px; box-shadow:var(--shadow-sm); margin-bottom:16px;
+  }
+  .card h2{margin:0 0 4px; font-size:16px; font-weight:700;}
+  .card .desc{margin:0 0 16px; color:var(--ink-soft); font-size:13.5px; max-width:64ch;}
+  .muted{color:var(--ink-muted); font-size:12.5px;}
+
+  /* ---------- import ---------- */
+  .drop-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  @media (max-width:620px){.drop-grid{grid-template-columns:1fr;}}
+  .dropzone{
+    border:1.5px dashed var(--border); border-radius:12px; padding:20px; text-align:center;
+    background:var(--surface-alt); cursor:pointer; transition:border-color .15s,background .15s;
+  }
+  .dropzone:hover{border-color:var(--accent); background:var(--accent-soft);}
+  .dropzone .ver-label{
+    display:inline-block; font-family:var(--font-mono); font-size:11px; letter-spacing:.06em;
+    padding:2px 8px; border-radius:20px; background:var(--surface); border:1px solid var(--border);
+    color:var(--ink-soft); margin-bottom:10px;
+  }
+  .dropzone .fname{display:block; margin-top:8px; font-size:12.5px; color:var(--accent-strong); font-weight:600; word-break:break-all;}
+  .dropzone .hint{font-size:12px; color:var(--ink-muted); margin-top:4px;}
+  .row-actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; align-items:center;}
+
+  button.btn{
+    font:inherit; font-weight:600; font-size:13.5px; padding:9px 16px; border-radius:8px;
+    border:1px solid var(--border); background:var(--surface); color:var(--ink); cursor:pointer;
+    transition:background .15s,border-color .15s;
+  }
+  button.btn:hover{background:var(--surface-alt);}
+  button.btn.primary{background:var(--accent); border-color:var(--accent); color:var(--accent-ink);}
+  button.btn.primary:hover{background:var(--accent-strong); border-color:var(--accent-strong);}
+  button.btn:disabled{opacity:.5; cursor:not-allowed;}
+
+  .status-line{
+    display:flex; gap:18px; flex-wrap:wrap; margin-top:14px; padding-top:14px;
+    border-top:1px dashed var(--border); font-size:12.5px; color:var(--ink-soft);
+  }
+  .status-line b{color:var(--ink); font-family:var(--font-mono); font-weight:600;}
+
+  details.spec{margin-top:14px;}
+  details.spec summary{cursor:pointer; font-size:13px; color:var(--accent-strong); font-weight:600;}
+  details.spec .spec-body{margin-top:10px; font-size:12.5px; color:var(--ink-soft);}
+  code.field{font-family:var(--font-mono); background:var(--surface-sunken); padding:1px 5px; border-radius:4px; font-size:12px;}
+
+  /* ---------- toolbar ---------- */
+  .toolbar{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;}
+  .seg{display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden;}
+  .seg button{
+    font:inherit; font-size:13px; font-weight:600; padding:7px 14px; border:none;
+    background:var(--surface); color:var(--ink-soft); cursor:pointer;
+  }
+  .seg button.active{background:var(--accent); color:var(--accent-ink);}
+  input.search{
+    font:inherit; font-size:13px; padding:8px 12px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); min-width:200px; flex:1;
+  }
+  .chip{
+    font-size:12px; font-weight:600; padding:5px 11px; border-radius:20px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink-soft); cursor:pointer;
+  }
+  .chip.active{background:var(--ink); color:var(--bg); border-color:var(--ink);}
+
+  /* ---------- table ---------- */
+  .table-wrap{overflow-x:auto; border:1px solid var(--border); border-radius:10px;}
+  table{width:100%; border-collapse:collapse; font-size:13px; min-width:640px;}
+  thead th{
+    text-align:left; font-size:11px; letter-spacing:.05em; text-transform:uppercase;
+    color:var(--ink-muted); font-weight:600; padding:10px 12px; background:var(--surface-alt);
+    border-bottom:1px solid var(--border); white-space:nowrap;
+  }
+  tbody td{padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:top;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:var(--surface-alt);}
+  td.num, th.num{font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-align:right;}
+  td.node{font-family:var(--font-mono); font-weight:600;}
+
+  .status-pill{
+    display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:700;
+    padding:3px 9px; border-radius:20px; white-space:nowrap;
+  }
+  .status-pill .dot{width:7px; height:7px; border-radius:50%; flex:none;}
+  .status-pill.added{background:var(--good-soft); color:var(--good);}
+  .status-pill.added .dot{background:var(--good);}
+  .status-pill.modified{background:var(--warn-soft); color:var(--warn);}
+  .status-pill.modified .dot{background:var(--warn);}
+  .status-pill.removed{background:var(--bad-soft); color:var(--bad);}
+  .status-pill.removed .dot{background:var(--bad);}
+  .status-pill.unchanged{background:var(--surface-alt); color:var(--ink-muted);}
+  .status-pill.unchanged .dot{background:var(--ink-muted);}
+
+  tr.diff-added td{background:color-mix(in srgb, var(--good) 7%, transparent);}
+  tr.diff-modified td{background:color-mix(in srgb, var(--warn) 8%, transparent);}
+  tr.diff-removed td{background:color-mix(in srgb, var(--bad) 7%, transparent); text-decoration:line-through; text-decoration-color:color-mix(in srgb, var(--bad) 50%, transparent);}
+  mark.delta{
+    background:none; color:var(--warn); font-weight:700; padding:0;
+  }
+  .was{color:var(--ink-muted); text-decoration:line-through; font-size:11.5px; display:block;}
+
+  /* ---------- stats ---------- */
+  .stat-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:16px;}
+  @media (max-width:700px){.stat-grid{grid-template-columns:1fr;}}
+  .stat-tile{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:18px 20px; box-shadow:var(--shadow-sm);
+  }
+  .stat-tile .label{font-size:12px; color:var(--ink-soft); font-weight:600; margin-bottom:8px;}
+  .stat-tile .value{font-size:26px; font-weight:700; font-family:var(--font-mono); letter-spacing:-.01em;}
+  .stat-tile .sub{margin-top:6px; font-size:12px; color:var(--ink-muted);}
+  .stat-tile .value small{font-size:14px; font-weight:600; color:var(--ink-soft);}
+
+  .chart-card .legend{display:flex; gap:16px; margin-bottom:14px; font-size:12.5px; color:var(--ink-soft);}
+  .legend .sw{display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:-1px;}
+  .bar-group{margin-bottom:22px;}
+  .bar-group:last-child{margin-bottom:4px;}
+  .bar-group .g-label{font-size:13px; font-weight:600; margin-bottom:8px;}
+  .bar-row{display:flex; align-items:center; gap:10px; margin-bottom:6px;}
+  .bar-row .b-label{width:64px; flex:none; font-size:11.5px; color:var(--ink-soft); font-family:var(--font-mono);}
+  .bar-track{flex:1; position:relative; height:20px; background:var(--surface-sunken); border-radius:4px; overflow:hidden;}
+  .bar-fill{height:100%; border-radius:4px 2px 2px 4px; display:flex; align-items:center;}
+  .bar-fill.auto{background:var(--chart-auto);}
+  .bar-fill.manual{background:var(--chart-manual);}
+  .bar-value{font-family:var(--font-mono); font-size:11px; font-weight:600; color:var(--ink); margin-left:8px; white-space:nowrap;}
+  .axis-ticks{display:flex; margin-left:74px; margin-top:2px;}
+  .axis-ticks span{flex:1; font-size:10.5px; color:var(--ink-muted); font-family:var(--font-mono);}
+  .axis-ticks span:last-child{flex:none; text-align:right;}
+
+  footer.foot{
+    margin-top:8px; padding-top:16px; border-top:1px solid var(--border);
+    font-size:12px; color:var(--ink-muted); display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
+  }
+  .badge-demo{
+    display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700;
+    color:var(--accent-strong); background:var(--accent-soft); padding:3px 9px; border-radius:20px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div>
+      <p class="eyebrow">配管工程室 · AI 创新攻坚大赛原型</p>
+      <h1>配管应力协同台</h1>
+      <p class="tagline">从配管三维模型导出的数据自动生成应力单线图标注清单，并在版次迭代时自动比对差异 —— 降低人工誊抄与人工比对带来的错漏。</p>
+    </div>
+    <div class="line-card">
+      管线号 <b id="lineNo">—</b><br>
+      介质 / 材质 <b id="lineMat">—</b><br>
+      设计参数 <b id="lineDesign">—</b>
+    </div>
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="功能区">
+    <button class="tab-btn" id="tabbtn-import" role="tab" aria-selected="true" data-target="panel-import">① 数据导入</button>
+    <button class="tab-btn" id="tabbtn-annot" role="tab" aria-selected="false" data-target="panel-annot">② 标注清单</button>
+    <button class="tab-btn" id="tabbtn-diff" role="tab" aria-selected="false" data-target="panel-diff">③ 版本对比</button>
+    <button class="tab-btn" id="tabbtn-stats" role="tab" aria-selected="false" data-target="panel-stats">④ 效果统计</button>
+  </div>
+
+  <!-- ================= PANEL 1: 数据导入 ================= -->
+  <section class="panel active" id="panel-import">
+    <div class="card">
+      <h2>导入两个版次的模型导出数据</h2>
+      <p class="desc">正式方案中，这里读取的是配管三维软件（SP3D / PDMS / E3D）导出并解析后的结构化数据（如 PCF 解析结果）。当前原型接受同等结构的 CSV 文件，也可以先用示例数据体验完整流程。</p>
+
+      <div class="drop-grid">
+        <div class="dropzone" id="dz-v1" tabindex="0" role="button" aria-label="上传前一版数据">
+          <span class="ver-label">REV. 前版（V1）</span>
+          <div>点击或拖拽 CSV 文件到此处</div>
+          <div class="hint">节点号 / 坐标 / 管径壁厚 / 支架 / 备注</div>
+          <span class="fname" id="fname-v1"></span>
+          <input type="file" id="file-v1" accept=".csv" hidden>
+        </div>
+        <div class="dropzone" id="dz-v2" tabindex="0" role="button" aria-label="上传当前版数据">
+          <span class="ver-label">REV. 现版（V2）</span>
+          <div>点击或拖拽 CSV 文件到此处</div>
+          <div class="hint">节点号 / 坐标 / 管径壁厚 / 支架 / 备注</div>
+          <span class="fname" id="fname-v2"></span>
+          <input type="file" id="file-v2" accept=".csv" hidden>
+        </div>
+      </div>
+
+      <div class="row-actions">
+        <button class="btn primary" id="btn-sample">加载示例数据</button>
+        <button class="btn" id="btn-template">下载 CSV 模板</button>
+        <span class="muted" id="import-msg">已加载内置示例管线数据。</span>
+      </div>
+
+      <details class="spec">
+        <summary>CSV 字段说明</summary>
+        <div class="spec-body">
+          每行一个标注节点，表头需包含：<code class="field">节点号</code>、<code class="field">X</code>、<code class="field">Y</code>、<code class="field">Z</code>（单位 mm）、<code class="field">DN</code>、<code class="field">壁厚等级</code>、<code class="field">支架</code>、<code class="field">备注</code>。节点号是两版数据比对的关键字，请与应力模型中的节点号保持一致。
+        </div>
+      </details>
+
+      <div class="status-line">
+        <span>前版节点数：<b id="count-v1">0</b></span>
+        <span>现版节点数：<b id="count-v2">0</b></span>
+        <span>数据来源：<b id="src-label">示例数据</b></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PANEL 2: 标注清单 ================= -->
+  <section class="panel" id="panel-annot">
+    <div class="card">
+      <h2>自动生成的标注清单</h2>
+      <p class="desc">对应单线图上应标注的信息：节点号、坐标、管径壁厚、支架位置与备注 —— 均从模型数据直接提取，无需人工誊抄。</p>
+      <div class="toolbar">
+        <div class="seg" id="seg-version">
+          <button data-v="v2" class="active">现版 V2</button>
+          <button data-v="v1">前版 V1</button>
+        </div>
+        <input class="search" id="annot-search" placeholder="按节点号 / 支架 / 备注筛选…">
+        <button class="btn" id="btn-export-annot">导出标注清单 (CSV)</button>
+      </div>
+      <div class="table-wrap">
+        <table id="annot-table">
+          <thead>
+            <tr>
+              <th>节点号</th><th class="num">X (mm)</th><th class="num">Y (mm)</th><th class="num">Z (mm)</th>
+              <th class="num">DN</th><th>壁厚等级</th><th>支架</th><th>备注</th>
+            </tr>
+          </thead>
+          <tbody id="annot-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PANEL 3: 版本对比 ================= -->
+  <section class="panel" id="panel-diff">
+    <div class="card">
+      <h2>版次变更自动比对</h2>
+      <p class="desc">以节点号为主键比对前版与现版数据，自动识别新增、修改、删除的节点，作为提交应力专业复核的变更清单，避免人工逐条核对遗漏。</p>
+      <div class="toolbar">
+        <span class="status-pill added"><span class="dot"></span>新增</span>
+        <span class="status-pill modified"><span class="dot"></span>修改</span>
+        <span class="status-pill removed"><span class="dot"></span>删除</span>
+        <span class="status-pill unchanged"><span class="dot"></span>未变</span>
+        <span style="flex:1"></span>
+        <button class="chip active" data-filter="all">全部</button>
+        <button class="chip" data-filter="changed">仅看变更</button>
+        <button class="btn" id="btn-export-diff">导出变更清单 (CSV)</button>
+      </div>
+      <div class="table-wrap">
+        <table id="diff-table">
+          <thead>
+            <tr>
+              <th>状态</th><th>节点号</th><th>坐标 X/Y/Z (mm)</th><th class="num">DN</th><th>壁厚等级</th><th>支架</th><th>备注</th>
+            </tr>
+          </thead>
+          <tbody id="diff-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PANEL 4: 效果统计 ================= -->
+  <section class="panel" id="panel-stats">
+    <div class="card">
+      <h2 style="display:flex;align-items:center;gap:8px;">效果统计 <span class="badge-demo">示例数据</span></h2>
+      <p class="desc">左侧变更点数由当前载入的数据实时计算；耗时对比为团队访谈得到的经验估计，用于说明思路，答辩前请替换为实测数据。</p>
+      <div class="stat-grid">
+        <div class="stat-tile">
+          <div class="label">本次案例识别的变更点</div>
+          <div class="value" id="stat-changes">—</div>
+          <div class="sub" id="stat-changes-sub">新增 · 修改 · 删除</div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">单线图标注环节（示例）</div>
+          <div class="value">45 <small>分钟 →</small> &lt;1 <small>分钟</small></div>
+          <div class="sub">人工逐点誊抄 → 自动生成标注清单</div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">版次比对环节（示例）</div>
+          <div class="value">30 <small>分钟 →</small> 数秒</div>
+          <div class="sub">人工逐条核对 → 自动生成变更清单</div>
+        </div>
+      </div>
+
+      <div class="card chart-card" style="margin-bottom:0;">
+        <h2>人工方式 vs 自动化原型：单条管线平均耗时</h2>
+        <div class="legend">
+          <span><span class="sw" style="background:var(--chart-manual)"></span>人工方式</span>
+          <span><span class="sw" style="background:var(--chart-auto)"></span>自动化原型</span>
+        </div>
+
+        <div class="bar-group">
+          <div class="g-label">标注生成（分钟 / 条）</div>
+          <div class="bar-row">
+            <span class="b-label">人工</span>
+            <div class="bar-track"><div class="bar-fill manual" style="width:90%"></div></div>
+            <span class="bar-value">45</span>
+          </div>
+          <div class="bar-row">
+            <span class="b-label">自动化</span>
+            <div class="bar-track"><div class="bar-fill auto" style="width:2%"></div></div>
+            <span class="bar-value">&lt;1</span>
+          </div>
+        </div>
+
+        <div class="bar-group">
+          <div class="g-label">版次比对（分钟 / 条）</div>
+          <div class="bar-row">
+            <span class="b-label">人工</span>
+            <div class="bar-track"><div class="bar-fill manual" style="width:60%"></div></div>
+            <span class="bar-value">30</span>
+          </div>
+          <div class="bar-row">
+            <span class="b-label">自动化</span>
+            <div class="bar-track"><div class="bar-fill auto" style="width:1%"></div></div>
+            <span class="bar-value">数秒</span>
+          </div>
+        </div>
+        <div class="axis-ticks"><span>0</span><span>15</span><span>30</span><span>45分钟</span></div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>原型演示 · 配管与应力协同攻坚赛小组 · 本地离线版</span>
+    <span>数据仅用于演示流程，非真实工程数据</span>
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var LINE_META = {
+    no: '8"-P-10234-A3A',
+    mat: 'A106 Gr.B（碳钢）',
+    design: '2.0 MPa / 180℃'
+  };
+
+  var SAMPLE_V1 = [
+    {node:10, x:0,    y:0,    z:3200, dn:150, sch:'Sch40', support:'固定架 A1', note:'设备接口 N1'},
+    {node:20, x:1500, y:0,    z:3200, dn:150, sch:'Sch40', support:'导向架 G1', note:''},
+    {node:30, x:3000, y:0,    z:3200, dn:150, sch:'Sch40', support:'—', note:''},
+    {node:40, x:3000, y:0,    z:4200, dn:150, sch:'Sch40', support:'弹簧架 S1', note:''},
+    {node:50, x:3000, y:1800, z:4200, dn:150, sch:'Sch40', support:'导向架 G2', note:''},
+    {node:60, x:4600, y:1800, z:4200, dn:150, sch:'Sch40', support:'导向架 G3', note:'冗余支架，拟取消'},
+    {node:70, x:4600, y:1800, z:3400, dn:100, sch:'Sch40', support:'滑动架 U1', note:'变径 150→100'},
+    {node:80, x:4600, y:1800, z:2200, dn:100, sch:'Sch40', support:'固定架 A2', note:'设备接口 N2'}
+  ];
+
+  var SAMPLE_V2 = [
+    {node:10, x:0,    y:0,    z:3200, dn:150, sch:'Sch40', support:'固定架 A1', note:'设备接口 N1'},
+    {node:20, x:1500, y:0,    z:3200, dn:150, sch:'Sch40', support:'导向架 G1', note:''},
+    {node:30, x:3000, y:0,    z:3200, dn:150, sch:'Sch40', support:'—', note:''},
+    {node:40, x:3000, y:0,    z:4500, dn:150, sch:'Sch40', support:'弹簧架 S1（标高上调）', note:''},
+    {node:45, x:3000, y:900,  z:4500, dn:150, sch:'Sch40', support:'导向架 G1A', note:'应力返回条件新增，控制横向振动'},
+    {node:50, x:3000, y:1800, z:4200, dn:150, sch:'Sch40', support:'导向架 G2', note:''},
+    {node:70, x:4600, y:1800, z:3400, dn:100, sch:'Sch40', support:'滑动架 U1', note:'变径 150→100'},
+    {node:80, x:4600, y:1800, z:2200, dn:100, sch:'Sch40', support:'固定架 A2', note:'设备接口 N2'}
+  ];
+
+  var FIELDS = ['x','y','z','dn','sch','support','note'];
+  var CSV_HEADERS = ['节点号','X','Y','Z','DN','壁厚等级','支架','备注'];
+
+  var state = { v1: SAMPLE_V1, v2: SAMPLE_V2, sourceLabel: '示例数据', annotVersion: 'v2', diffFilter: 'all' };
+
+  /* ---------------- helpers ---------------- */
+  function byNode(list){
+    var m = {};
+    list.forEach(function(r){ m[r.node] = r; });
+    return m;
+  }
+  function esc(s){
+    return String(s).replace(/[&<>"]/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+    });
+  }
+  function toCSV(rows){
+    var lines = [CSV_HEADERS.join(',')];
+    rows.forEach(function(r){
+      lines.push([r.node,r.x,r.y,r.z,r.dn,r.sch,r.support,r.note].map(function(v){
+        v = (v===undefined||v===null) ? '' : String(v);
+        return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v;
+      }).join(','));
+    });
+    return lines.join('\n');
+  }
+  function parseCSV(text){
+    var lines = text.replace(/\r/g,'').split('\n').filter(function(l){ return l.trim().length; });
+    if(lines.length < 2) return [];
+    var head = lines[0].split(',').map(function(h){ return h.trim(); });
+    var idx = {
+      node: head.indexOf('节点号'), x: head.indexOf('X'), y: head.indexOf('Y'), z: head.indexOf('Z'),
+      dn: head.indexOf('DN'), sch: head.indexOf('壁厚等级'), support: head.indexOf('支架'), note: head.indexOf('备注')
+    };
+    var out = [];
+    for(var i=1;i<lines.length;i++){
+      var cols = lines[i].split(',');
+      if(idx.node<0 || !cols[idx.node]) continue;
+      out.push({
+        node: Number(cols[idx.node]),
+        x: Number(cols[idx.x]||0), y: Number(cols[idx.y]||0), z: Number(cols[idx.z]||0),
+        dn: Number(cols[idx.dn]||0), sch: (cols[idx.sch]||'').trim(),
+        support: (cols[idx.support]||'').trim(), note: (cols[idx.note]||'').trim()
+      });
+    }
+    return out.sort(function(a,b){ return a.node-b.node; });
+  }
+
+  function computeDiff(v1, v2){
+    var m1 = byNode(v1), m2 = byNode(v2);
+    var nodes = Object.keys(Object.assign({}, m1, m2)).map(Number).sort(function(a,b){ return a-b; });
+    return nodes.map(function(n){
+      var a = m1[n], b = m2[n];
+      if(a && !b) return {node:n, status:'removed', a:a, b:null, changed:[]};
+      if(!a && b) return {node:n, status:'added', a:null, b:b, changed:[]};
+      var changed = FIELDS.filter(function(f){ return String(a[f]) !== String(b[f]); });
+      return {node:n, status: changed.length ? 'modified' : 'unchanged', a:a, b:b, changed:changed};
+    });
+  }
+
+  /* ---------------- render: header ---------------- */
+  function renderMeta(){
+    document.getElementById('lineNo').textContent = LINE_META.no;
+    document.getElementById('lineMat').textContent = LINE_META.mat;
+    document.getElementById('lineDesign').textContent = LINE_META.design;
+    document.getElementById('count-v1').textContent = state.v1.length;
+    document.getElementById('count-v2').textContent = state.v2.length;
+    document.getElementById('src-label').textContent = state.sourceLabel;
+  }
+
+  /* ---------------- render: annotation table ---------------- */
+  function renderAnnot(){
+    var list = state.annotVersion === 'v1' ? state.v1 : state.v2;
+    var q = document.getElementById('annot-search').value.trim().toLowerCase();
+    if(q){
+      list = list.filter(function(r){
+        return String(r.node).indexOf(q)>=0 || (r.support||'').toLowerCase().indexOf(q)>=0 || (r.note||'').toLowerCase().indexOf(q)>=0;
+      });
+    }
+    var tbody = document.getElementById('annot-tbody');
+    tbody.innerHTML = list.map(function(r){
+      return '<tr><td class="node">'+r.node+'</td><td class="num">'+r.x+'</td><td class="num">'+r.y+'</td><td class="num">'+r.z+
+        '</td><td class="num">DN'+r.dn+'</td><td>'+esc(r.sch)+'</td><td>'+esc(r.support)+'</td><td>'+esc(r.note||'—')+'</td></tr>';
+    }).join('') || '<tr><td colspan="8" class="muted" style="padding:16px;">无匹配节点</td></tr>';
+  }
+
+  /* ---------------- render: diff table ---------------- */
+  var STATUS_LABEL = {added:'新增', modified:'修改', removed:'删除', unchanged:'未变'};
+
+  function fieldCell(d, f, label){
+    if(d.status==='removed') return esc(d.a[f]) + (label==='dn' ? '' : '');
+    if(d.status==='added') return esc(d.b[f]);
+    if(d.status==='modified' && d.changed.indexOf(f)>=0){
+      return '<span class="was">'+esc(d.a[f])+'</span><mark class="delta">'+esc(d.b[f])+'</mark>';
+    }
+    return esc(d.b[f]);
+  }
+
+  function renderDiff(){
+    var diffs = computeDiff(state.v1, state.v2);
+    if(state.diffFilter==='changed'){ diffs = diffs.filter(function(d){ return d.status!=='unchanged'; }); }
+    var tbody = document.getElementById('diff-tbody');
+    tbody.innerHTML = diffs.map(function(d){
+      var row = d.status==='removed' ? d.a : d.b;
+      var coord = d.status==='removed'
+        ? d.a.x+' / '+d.a.y+' / '+d.a.z
+        : (d.status==='modified' && (d.changed.indexOf('x')>=0||d.changed.indexOf('y')>=0||d.changed.indexOf('z')>=0)
+            ? '<span class="was">'+d.a.x+' / '+d.a.y+' / '+d.a.z+'</span><mark class="delta">'+d.b.x+' / '+d.b.y+' / '+d.b.z+'</mark>'
+            : row.x+' / '+row.y+' / '+row.z);
+      return '<tr class="diff-'+d.status+'">'+
+        '<td><span class="status-pill '+d.status+'"><span class="dot"></span>'+STATUS_LABEL[d.status]+'</span></td>'+
+        '<td class="node">'+d.node+'</td>'+
+        '<td>'+coord+'</td>'+
+        '<td class="num">'+fieldCell(d,'dn')+'</td>'+
+        '<td>'+fieldCell(d,'sch')+'</td>'+
+        '<td>'+fieldCell(d,'support')+'</td>'+
+        '<td>'+fieldCell(d,'note')+'</td>'+
+        '</tr>';
+    }).join('') || '<tr><td colspan="7" class="muted" style="padding:16px;">没有满足条件的节点</td></tr>';
+  }
+
+  function renderStats(){
+    var diffs = computeDiff(state.v1, state.v2);
+    var added = diffs.filter(function(d){return d.status==='added';}).length;
+    var modified = diffs.filter(function(d){return d.status==='modified';}).length;
+    var removed = diffs.filter(function(d){return d.status==='removed';}).length;
+    document.getElementById('stat-changes').textContent = (added+modified+removed) + ' 处';
+    document.getElementById('stat-changes-sub').textContent = '新增 '+added+' · 修改 '+modified+' · 删除 '+removed;
+  }
+
+  function renderAll(){ renderMeta(); renderAnnot(); renderDiff(); renderStats(); }
+
+  /* ---------------- tabs ---------------- */
+  document.querySelectorAll('.tab-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.tab-btn').forEach(function(b){ b.setAttribute('aria-selected','false'); });
+      document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('active'); });
+      btn.setAttribute('aria-selected','true');
+      document.getElementById(btn.dataset.target).classList.add('active');
+    });
+  });
+
+  /* ---------------- import panel ---------------- */
+  function wireDropzone(zoneId, inputId, fnameId, which){
+    var zone = document.getElementById(zoneId), input = document.getElementById(inputId);
+    zone.addEventListener('click', function(){ input.click(); });
+    zone.addEventListener('keydown', function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); input.click(); } });
+    ['dragover'].forEach(function(evt){ zone.addEventListener(evt, function(e){ e.preventDefault(); zone.style.borderColor='var(--accent)'; }); });
+    ['dragleave','drop'].forEach(function(evt){ zone.addEventListener(evt, function(e){ e.preventDefault(); zone.style.borderColor=''; }); });
+    zone.addEventListener('drop', function(e){ handleFile(e.dataTransfer.files[0]); });
+    input.addEventListener('change', function(e){ handleFile(e.target.files[0]); });
+    function handleFile(file){
+      if(!file) return;
+      var reader = new FileReader();
+      reader.onload = function(){
+        var rows = parseCSV(String(reader.result));
+        if(!rows.length){ document.getElementById('import-msg').textContent = '未能解析出有效行，请检查表头是否为：'+CSV_HEADERS.join('、'); return; }
+        state[which] = rows;
+        state.sourceLabel = '已上传文件';
+        document.getElementById(fnameId).textContent = file.name;
+        document.getElementById('import-msg').textContent = which.toUpperCase()+' 已更新为上传数据（'+rows.length+' 行）。';
+        renderAll();
+      };
+      reader.readAsText(file, 'utf-8');
+    }
+  }
+  wireDropzone('dz-v1','file-v1','fname-v1','v1');
+  wireDropzone('dz-v2','file-v2','fname-v2','v2');
+
+  document.getElementById('btn-sample').addEventListener('click', function(){
+    state.v1 = SAMPLE_V1; state.v2 = SAMPLE_V2; state.sourceLabel = '示例数据';
+    document.getElementById('fname-v1').textContent = '';
+    document.getElementById('fname-v2').textContent = '';
+    document.getElementById('import-msg').textContent = '已重新加载内置示例管线数据。';
+    renderAll();
+  });
+
+  document.getElementById('btn-template').addEventListener('click', function(){
+    triggerDownload(CSV_HEADERS.join(',')+'\n40,3000,0,4200,150,Sch40,弹簧架 S1,\n', '标注数据模板.csv');
+  });
+
+  /* ---------------- annotation panel controls ---------------- */
+  document.querySelectorAll('#seg-version button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('#seg-version button').forEach(function(x){ x.classList.remove('active'); });
+      b.classList.add('active'); state.annotVersion = b.dataset.v; renderAnnot();
+    });
+  });
+  document.getElementById('annot-search').addEventListener('input', renderAnnot);
+  document.getElementById('btn-export-annot').addEventListener('click', function(){
+    var list = state.annotVersion==='v1' ? state.v1 : state.v2;
+    triggerDownload(toCSV(list), '标注清单_'+state.annotVersion+'.csv');
+  });
+
+  /* ---------------- diff panel controls ---------------- */
+  document.querySelectorAll('.chip').forEach(function(c){
+    c.addEventListener('click', function(){
+      document.querySelectorAll('.chip').forEach(function(x){ x.classList.remove('active'); });
+      c.classList.add('active'); state.diffFilter = c.dataset.filter; renderDiff();
+    });
+  });
+  document.getElementById('btn-export-diff').addEventListener('click', function(){
+    var diffs = computeDiff(state.v1, state.v2).filter(function(d){ return d.status!=='unchanged'; });
+    var rows = diffs.map(function(d){
+      var r = Object.assign({}, d.b || d.a); r.note = '['+STATUS_LABEL[d.status]+'] ' + (r.note||'');
+      return r;
+    });
+    triggerDownload(toCSV(rows), '变更清单.csv');
+  });
+
+  /* ---------------- local file download (no server / no claude.ai needed) ---------------- */
+  function triggerDownload(text, filename){
+    try{
+      var blob = new Blob(["﻿"+text], {type:'text/csv;charset=utf-8;'});
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = filename; document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
+    }catch(e){
+      window.prompt('当前浏览器无法直接保存文件，已为你准备好 '+filename+' 的内容，可全选复制后粘贴到文本文件/Excel 中：', text);
+    }
+  }
+
+  renderAll();
+})();
+</script>
+</body>
+</html>
