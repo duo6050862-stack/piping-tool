@@ -396,14 +396,26 @@
   <section class="panel" id="panel-returns">
     <div class="card">
       <h2>登记新的返回条件</h2>
-      <p class="desc">应力专业提出的返回意见（支架调整、走向要求等）与配管专业的处理状态在这里集中跟踪，避免版次多了以后意见散落在邮件、纸质单里被遗漏。</p>
+      <p class="desc">和应力专业约定的结构化返回模板：支架位号 / 位置 / 类型 / 载荷 X、Y、Z / 调整建议 / 版次，替代散落在邮件、PDF 手标里的意见，避免版次一多就遗漏。</p>
       <div class="return-form">
-        <select id="return-node" class="search"></select>
+        <select id="return-node" class="search" title="节点号（位置将自动取自模型坐标）"></select>
+        <input type="text" id="return-support" class="search" placeholder="支架位号（如 G1A）" style="width:150px;">
+        <select id="return-type" class="search" title="支架类型">
+          <!-- populated by JS from RETURN_TYPE_OPTIONS -->
+        </select>
         <select id="return-from" class="search">
           <option>应力专业</option>
           <option>配管专业</option>
         </select>
-        <input type="text" id="return-content" class="search" placeholder="返回条件 / 处理意见内容…" style="flex:2; min-width:220px;">
+      </div>
+      <div class="return-form" style="margin-top:10px;">
+        <input type="number" id="return-load-x" class="search" placeholder="载荷 X (kN)" style="width:130px;" step="0.1">
+        <input type="number" id="return-load-y" class="search" placeholder="载荷 Y (kN)" style="width:130px;" step="0.1">
+        <input type="number" id="return-load-z" class="search" placeholder="载荷 Z (kN)" style="width:130px;" step="0.1">
+        <input type="text" id="return-rev" class="search" placeholder="版次" value="Rev.2" style="width:100px;">
+      </div>
+      <div class="return-form" style="margin-top:10px;">
+        <input type="text" id="return-content" class="search" placeholder="调整建议 / 处理意见…" style="flex:2; min-width:220px;">
         <button class="btn primary" id="btn-add-return">提交</button>
       </div>
     </div>
@@ -418,8 +430,10 @@
         <button class="chip active" data-return-filter="all">全部</button>
         <button class="chip" data-return-filter="待处理">仅看待处理</button>
         <button class="chip" data-return-filter="已处理">仅看已处理</button>
+        <button class="btn" id="btn-export-returns" style="margin-left:auto;">导出支架修改数据</button>
       </div>
       <div id="return-list"></div>
+      <p class="muted" style="margin-top:10px; font-size:12px;">导出内容用于模拟"配管侧可直接导入 E3D 的支架修改数据"；实际列顺序 / 字段需按本单位 E3D 自定义导入模板调整。</p>
     </div>
   </section>
 
@@ -531,15 +545,22 @@
   var FIELDS = ['x','y','z','dn','sch','support','note'];
   var CSV_HEADERS = ['节点号','X','Y','Z','DN','壁厚等级','支架','备注'];
 
+  var RETURN_TYPE_OPTIONS = ['固定支架(锚固)','导向支架','限位支架','弹簧支架','可变弹簧支架','恒力弹簧支架','吊架','滑动支架','其他'];
+
   var RETURN_SEED = [
-    {id:1, node:45, from:'应力专业', content:'该位置需增加导向支架，控制管道横向振动幅度', status:'待处理', date:'2026-09-10'},
-    {id:2, node:40, from:'应力专业', content:'建议将标高上调 300mm，增加此处柔性，降低一次应力', status:'已处理', date:'2026-09-08'},
-    {id:3, node:60, from:'配管专业', content:'现场核实该支架与钢结构存在冲突，建议评估是否可取消', status:'已处理', date:'2026-09-07'}
+    {id:1, node:45, supportTag:'G1A', type:'导向支架', loadX:0, loadY:12.5, loadZ:0,
+     content:'该位置需增加导向支架，控制管道横向振动幅度', rev:'Rev.2', from:'应力专业', status:'已处理', date:'2026-09-10'},
+    {id:2, node:40, supportTag:'S1', type:'弹簧支架', loadX:0, loadY:0, loadZ:8.3,
+     content:'弹簧架标高建议上调 300mm，增加此处柔性，降低一次应力', rev:'Rev.2', from:'应力专业', status:'已处理', date:'2026-09-08'},
+    {id:3, node:60, supportTag:'G3', type:'导向支架', loadX:0, loadY:0, loadZ:0,
+     content:'现场核实该支架与钢结构存在冲突，为冗余支架，建议取消', rev:'Rev.2', from:'配管专业', status:'已处理', date:'2026-09-07'},
+    {id:4, node:70, supportTag:'U1', type:'滑动支架', loadX:3.2, loadY:0, loadZ:0,
+     content:'滑动架处轴向载荷偏大，建议核实支撑面摩擦系数取值', rev:'Rev.2', from:'应力专业', status:'待处理', date:'2026-09-13'}
   ];
 
   var state = {
     v1: SAMPLE_V1, v2: SAMPLE_V2, sourceLabel: '示例数据', annotVersion: 'v2', diffFilter: 'all',
-    returns: RETURN_SEED.slice(), returnFilter: 'all', nextReturnId: 4
+    returns: RETURN_SEED.slice(), returnFilter: 'all', nextReturnId: 5
   };
 
   /* ---------------- helpers ---------------- */
@@ -823,6 +844,20 @@
     if(nodes.indexOf(Number(current)) >= 0){ sel.value = current; }
   }
 
+  function populateReturnTypeOptions(){
+    var sel = document.getElementById('return-type');
+    if(!sel || sel.options.length) return;
+    sel.innerHTML = RETURN_TYPE_OPTIONS.map(function(t){ return '<option value="'+t+'">'+t+'</option>'; }).join('');
+    sel.value = '导向支架';
+  }
+
+  function nodePos(node){
+    var m2 = byNode(state.v2);
+    if(m2[node]) return m2[node];
+    var m1 = byNode(state.v1);
+    return m1[node] || null;
+  }
+
   function renderReturns(){
     var listEl = document.getElementById('return-list');
     if(!listEl) return;
@@ -832,13 +867,20 @@
       var fromCls = r.from === '应力专业' ? 'from-stress' : 'from-piping';
       var statusCls = r.status === '已处理' ? 'added' : 'modified';
       var nextLabel = r.status === '已处理' ? '标记为待处理' : '标记为已处理';
+      var pos = nodePos(r.node);
+      var posText = pos ? ('('+pos.x+', '+pos.y+', '+pos.z+') mm') : '模型中未找到该节点';
       return '<div class="return-item">' +
         '<div class="return-top">' +
           '<span class="status-pill node-badge">节点 '+r.node+'</span>' +
+          (r.supportTag ? '<span class="chip-tag from-piping">支架 '+esc(r.supportTag)+'</span>' : '') +
+          '<span class="chip-tag from-piping">'+esc(r.type||'—')+'</span>' +
           '<span class="chip-tag '+fromCls+'">'+esc(r.from)+'</span>' +
-          '<span class="muted" style="margin-left:auto">'+r.date+'</span>' +
+          '<span class="muted" style="margin-left:auto">'+esc(r.rev||'')+' · '+r.date+'</span>' +
         '</div>' +
         '<p class="return-content">'+esc(r.content)+'</p>' +
+        '<div class="muted" style="font-size:12px; font-family:var(--font-mono); margin:0 0 10px;">' +
+          '位置：'+esc(posText)+'　载荷 X/Y/Z (kN)：'+r.loadX+' / '+r.loadY+' / '+r.loadZ +
+        '</div>' +
         '<div class="return-bottom">' +
           '<span class="status-pill '+statusCls+'"><span class="dot"></span>'+r.status+'</span>' +
           '<button class="btn" data-toggle-return="'+r.id+'">'+nextLabel+'</button>' +
@@ -869,7 +911,7 @@
 
   function renderAll(){
     renderMeta(); renderAnnot(); renderDiff(); renderSchematic();
-    populateReturnNodeOptions(); renderReturns(); renderStats();
+    populateReturnTypeOptions(); populateReturnNodeOptions(); renderReturns(); renderStats();
   }
 
   /* ---------------- tabs ---------------- */
@@ -972,14 +1014,23 @@
   document.getElementById('btn-add-return').addEventListener('click', function(){
     var nodeSel = document.getElementById('return-node');
     var fromSel = document.getElementById('return-from');
+    var typeSel = document.getElementById('return-type');
+    var supportInput = document.getElementById('return-support');
+    var revInput = document.getElementById('return-rev');
+    var lxInput = document.getElementById('return-load-x');
+    var lyInput = document.getElementById('return-load-y');
+    var lzInput = document.getElementById('return-load-z');
     var contentInput = document.getElementById('return-content');
     var content = contentInput.value.trim();
     if(!content){ contentInput.focus(); return; }
     state.returns.push({
       id: state.nextReturnId++, node: Number(nodeSel.value), from: fromSel.value,
+      supportTag: supportInput.value.trim(), type: typeSel.value,
+      loadX: Number(lxInput.value||0), loadY: Number(lyInput.value||0), loadZ: Number(lzInput.value||0),
+      rev: revInput.value.trim() || 'Rev.'+(state.returns.length+1),
       content: content, status: '待处理', date: todayStr()
     });
-    contentInput.value = '';
+    contentInput.value = ''; supportInput.value = ''; lxInput.value = ''; lyInput.value = ''; lzInput.value = '';
     renderReturns();
   });
   document.getElementById('return-list').addEventListener('click', function(e){
@@ -988,6 +1039,31 @@
     var id = Number(btn.getAttribute('data-toggle-return'));
     var item = state.returns.filter(function(r){ return r.id === id; })[0];
     if(item){ item.status = item.status === '已处理' ? '待处理' : '已处理'; renderReturns(); }
+  });
+
+  /* ---------------- support-modification export (模拟 E3D 导入数据) ---------------- */
+  function toSupportExportCSV(rows){
+    var headers = ['支架位号','节点号','X(mm)','Y(mm)','Z(mm)','支架类型','载荷X(kN)','载荷Y(kN)','载荷Z(kN)','调整建议','版次','状态'];
+    var lines = [headers.join(',')];
+    rows.forEach(function(r){
+      var pos = nodePos(r.node);
+      var vals = [
+        r.supportTag||'', r.node,
+        pos?pos.x:'', pos?pos.y:'', pos?pos.z:'',
+        r.type||'', r.loadX||0, r.loadY||0, r.loadZ||0,
+        r.content||'', r.rev||'', r.status
+      ];
+      lines.push(vals.map(function(v){
+        v = (v===undefined||v===null) ? '' : String(v);
+        return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v;
+      }).join(','));
+    });
+    return lines.join('\n');
+  }
+  document.getElementById('btn-export-returns').addEventListener('click', function(){
+    var rows = state.returns.slice().sort(function(a,b){ return a.node-b.node; });
+    if(!rows.length){ return; }
+    triggerDownload(toSupportExportCSV(rows), '支架修改数据_E3D导入模拟.csv');
   });
 
   /* ---------------- local file download (no server / no claude.ai needed) ---------------- */
