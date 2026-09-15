@@ -260,6 +260,16 @@
   .node-badge{background:var(--surface-sunken); color:var(--ink-soft);}
   .return-summary{display:flex; gap:16px; margin-bottom:14px; font-size:12.5px; color:var(--ink-soft); flex-wrap:wrap;}
   .return-summary b{color:var(--ink); font-family:var(--font-mono);}
+  .collab-bar{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    background:var(--surface); border:1px solid var(--border); border-radius:10px;
+    padding:9px 14px; margin-bottom:16px; font-size:12.5px; color:var(--ink-soft);
+  }
+  .collab-bar .dot-status{width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:6px; background:var(--ink-muted); flex:none;}
+  .collab-bar .dot-status.ok{background:#0ca30c;}
+  .collab-bar .dot-status.err{background:#d03b3b;}
+  .collab-bar .collab-nick{display:flex; align-items:center; gap:8px; margin-left:auto;}
+  .collab-bar input.search{width:110px;}
 </style>
 </head>
 <body>
@@ -276,6 +286,11 @@
       介质 / 材质 <b id="lineMat">—</b><br>
       设计参数 <b id="lineDesign">—</b>
     </div>
+  </div>
+
+  <div class="collab-bar" id="collab-bar">
+    <span><span class="dot-status" id="collab-dot"></span><span id="collab-status">协作状态：未配置（当前仅本机可见，数据不会同步给团队其他人）</span></span>
+    <span class="collab-nick">你的称呼 <input type="text" id="collab-nickname" class="search" placeholder="如：小李"></span>
   </div>
 
   <div class="tabs" role="tablist" aria-label="功能区">
@@ -510,6 +525,8 @@
   </footer>
 </div>
 
+<!-- 团队协作用（可选）：腾讯云开发 CloudBase Web SDK。未配置环境ID时不影响本机离线使用。 -->
+<script src="https://static.cloudbase.net/cloudbase-js-sdk/3.9.4/cloudbase.full.js"></script>
 <script>
 (function(){
   "use strict";
@@ -519,6 +536,33 @@
     mat: 'A106 Gr.B（碳钢）',
     design: '2.0 MPa / 180℃'
   };
+
+  /* ---------------- 团队协作（可选，用的是 CloudBase 的 "SQL 型数据库/Supabase 版"）----------------
+     体验版（免费）环境不支持"文档型数据库"，但支持这种 PostgreSQL 版，可以直接被
+     网页读写，不需要额外写云函数。配置步骤：
+     1) 在"SQL 型数据库"里新建一张表，表名和下面 CLOUD_TABLE 保持一致，至少包含
+        字段：id (text, 主键) / payload (jsonb) / updated_at (bigint) / updated_by (text)；
+        如果有 SQL 编辑器，也可以直接执行：
+          create table piping_workspace (
+            id text primary key, payload jsonb, updated_at bigint, updated_by text
+          );
+          alter table piping_workspace enable row level security;
+          create policy "public read" on piping_workspace for select using (true);
+          create policy "public insert" on piping_workspace for insert with check (true);
+          create policy "public update" on piping_workspace for update using (true);
+     2) 在"身份认证"里开启"匿名登录"（和之前一样）；
+     3) 在"API Key 配置"里找到 Publishable Key（前端可公开使用的那个 key），把下面
+        CLOUDBASE_ACCESS_KEY 换成它，CLOUDBASE_ENV_ID 换成你的环境ID；
+     4) 保存本文件、重新上传替换 GitHub 上的 index.html 即可生效。
+     不配置的话，网页自动退回"仅本机可见"的离线模式，其余功能不受影响。
+     提示：这条集成路径我没能实机连线测试，如果"协作状态"栏报错，把报错文字或
+     控制台截图发回来，我们一起对照调整。 */
+  var CLOUDBASE_ENV_ID = 'piping-tool-d5gkh19uz3ef34915';
+  var CLOUDBASE_ACCESS_KEY = 'eyJhbGciOiJSUzI1NiIsImtpZCI6IjFhNzY2MzAxLWFhOTEtNDBlMS1iYzdlLTYyZjA5NjM3NGM1YSJ9.eyJpc3MiOiJodHRwczovL3BpcGluZy10b29sLWQ1Z2toMTl1ejNlZjM0OTE1LmFwLXNoYW5naGFpLnRjYi1hcGkudGVuY2VudGNsb3VkYXBpLmNvbSIsInN1YiI6ImFub24iLCJhdWQiOiJwaXBpbmctdG9vbC1kNWdraDE5dXozZWYzNDkxNSIsImV4cCI6NDA5MzEyMjU4MSwiaWF0IjoxNzg5NDM5MzgxLCJub25jZSI6ImtqZHNYZmVzUWUyZjdrcTNoNmJnQ0EiLCJhdF9oYXNoIjoia2pkc1hmZXNRZTJmN2txM2g2YmdDQSIsIm5hbWUiOiJBbm9ueW1vdXMiLCJzY29wZSI6ImFub255bW91cyIsInByb2plY3RfaWQiOiJwaXBpbmctdG9vbC1kNWdraDE5dXozZWYzNDkxNSIsIm1ldGEiOnsicGxhdGZvcm0iOiJQdWJsaXNoYWJsZUtleSJ9LCJyb2xlIjoiYW5vbiIsImlzX2Fub255bW91cyI6dHJ1ZSwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiYW5vbnltb3VzIiwicHJvdmlkZXJzIjpbImFub255bW91cyJdfSwidXNlcl9tZXRhZGF0YSI6eyJuYW1lIjoiQW5vbnltb3VzIn0sInVzZXJfdHlwZSI6IiIsImNsaWVudF90eXBlIjoiY2xpZW50X3VzZXIiLCJpc19zeXN0ZW1fYWRtaW4iOmZhbHNlfQ.Q9jWDTonihrE6yOUC4w8_dAX908gB9UNQq6rfWqzov5WmueDQZYEXmdp4xvMEpFKfIDW10ClMYvb6tKxKOKlwJh3zEjN2UoJY8kQSzYaa6mZqHDmbjkcJSoK0us0mbjbXQxweLEmud0fBgi-kCSMXUYA_2zUFlSVf1ydGdym5uwCaV7Ws72RMRT5hEOA_cQjrPahpN2drNmAtq86fyy4RwWd8vnScOlzkMgaTcdYGypyprBPDSCe6YP2XnGxJLl_1fFY_SfB9nWE2sBooF4MsrtLEeU7c_i260nMSUrkQUU5p2fyY34fuarfMmtsAk_8QfNgopErpkW30WoqpXjgxA';
+  var CLOUD_TABLE = 'piping_workspace';
+  var CLOUD_ROW_ID = 'shared';
+  var CLOUD_POLL_MS = 8000;
+  var cloud = { db:null, ready:false, lastAppliedAt:0, nickname:'' };
 
   var SAMPLE_V1 = [
     {node:10, x:0,    y:0,    z:3200, dn:150, sch:'Sch40', support:'固定架 A1', note:'设备接口 N1'},
@@ -834,6 +878,87 @@
     function p(n){ return String(n).padStart(2,'0'); }
     return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
   }
+  function nowTimeStr(){
+    var d = new Date();
+    function p(n){ return String(n).padStart(2,'0'); }
+    return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+  }
+
+  /* ---------------- 团队协作：云端同步（可选功能） ---------------- */
+  function setCollabStatus(text, kind){
+    var t = document.getElementById('collab-status');
+    var d = document.getElementById('collab-dot');
+    if(t) t.textContent = '协作状态：'+text;
+    if(d) d.className = 'dot-status'+(kind?(' '+kind):'');
+  }
+  function cloudConfigured(){
+    return CLOUDBASE_ENV_ID && CLOUDBASE_ENV_ID.indexOf('替换成') === -1 &&
+      CLOUDBASE_ACCESS_KEY && CLOUDBASE_ACCESS_KEY.indexOf('替换成') === -1 &&
+      typeof cloudbase !== 'undefined';
+  }
+  function cloudInit(){
+    if(!cloudConfigured()){
+      setCollabStatus('未配置（当前仅本机可见，数据不会同步给团队其他人）', '');
+      return;
+    }
+    try{
+      var app = cloudbase.init({ env: CLOUDBASE_ENV_ID, accessKey: CLOUDBASE_ACCESS_KEY });
+      if(typeof app.rdb !== 'function'){
+        setCollabStatus('初始化失败：当前 SDK 版本不支持 SQL 型数据库（rdb），需要升级 SDK 版本', 'err');
+        return;
+      }
+      app.auth.signInAnonymously().then(function(){
+        cloud.db = app.rdb();
+        cloud.ready = true;
+        setCollabStatus('已连接，正在同步团队数据…', 'ok');
+        cloudPull(true);
+        setInterval(function(){ cloudPull(false); }, CLOUD_POLL_MS);
+      }).catch(function(err){
+        setCollabStatus('连接失败：'+(err && err.message || err), 'err');
+      });
+    }catch(e){
+      setCollabStatus('初始化失败：'+e.message, 'err');
+    }
+  }
+  function cloudPull(isFirst){
+    if(!cloud.ready) return;
+    cloud.db.from(CLOUD_TABLE).select('*').eq('id', CLOUD_ROW_ID).then(function(res){
+      if(res && res.error){ setCollabStatus('同步失败：'+res.error.message, 'err'); return; }
+      var row = res && res.data && res.data[0];
+      if(!row){ if(isFirst) cloudPush(); return; }
+      var doc = row.payload || {};
+      var updatedAt = row.updated_at || 0;
+      if(updatedAt > cloud.lastAppliedAt){
+        cloud.lastAppliedAt = updatedAt;
+        if(Array.isArray(doc.v1)) state.v1 = doc.v1;
+        if(Array.isArray(doc.v2)) state.v2 = doc.v2;
+        if(doc.sourceLabel) state.sourceLabel = doc.sourceLabel;
+        if(Array.isArray(doc.returns)) state.returns = doc.returns;
+        if(doc.nextReturnId) state.nextReturnId = doc.nextReturnId;
+        renderAll();
+        setCollabStatus('已连接 · 最近同步 '+nowTimeStr()+(row.updated_by?('（'+esc(row.updated_by)+' 更新）'):''), 'ok');
+      }
+    }).catch(function(err){
+      setCollabStatus('同步失败：'+(err && err.message || err), 'err');
+    });
+  }
+  function cloudPush(){
+    if(!cloud.ready) return;
+    var now = Date.now();
+    cloud.lastAppliedAt = now;
+    var payload = {
+      v1: state.v1, v2: state.v2, sourceLabel: state.sourceLabel,
+      returns: state.returns, nextReturnId: state.nextReturnId
+    };
+    cloud.db.from(CLOUD_TABLE).upsert({
+      id: CLOUD_ROW_ID, payload: payload, updated_at: now, updated_by: cloud.nickname || '匿名'
+    }).then(function(res){
+      if(res && res.error){ setCollabStatus('同步失败：'+res.error.message, 'err'); return; }
+      setCollabStatus('已连接 · 已同步到团队（'+nowTimeStr()+'）', 'ok');
+    }).catch(function(err){
+      setCollabStatus('同步失败：'+(err && err.message || err), 'err');
+    });
+  }
 
   function populateReturnNodeOptions(){
     var sel = document.getElementById('return-node');
@@ -956,6 +1081,7 @@
         document.getElementById(fnameId).textContent = file.name;
         document.getElementById('import-msg').textContent = which.toUpperCase()+' 已更新为上传数据（'+kindLabel+'，'+rows.length+' 行'+(isPCF?'，管径/支架为自动解析，建议核对':'')+'）。';
         renderAll();
+        cloudPush();
       };
       reader.readAsText(file, 'utf-8');
     }
@@ -969,6 +1095,7 @@
     document.getElementById('fname-v2').textContent = '';
     document.getElementById('import-msg').textContent = '已重新加载内置示例管线数据。';
     renderAll();
+    cloudPush();
   });
 
   document.getElementById('btn-template').addEventListener('click', function(){
@@ -1032,13 +1159,14 @@
     });
     contentInput.value = ''; supportInput.value = ''; lxInput.value = ''; lyInput.value = ''; lzInput.value = '';
     renderReturns();
+    cloudPush();
   });
   document.getElementById('return-list').addEventListener('click', function(e){
     var btn = e.target.closest('[data-toggle-return]');
     if(!btn) return;
     var id = Number(btn.getAttribute('data-toggle-return'));
     var item = state.returns.filter(function(r){ return r.id === id; })[0];
-    if(item){ item.status = item.status === '已处理' ? '待处理' : '已处理'; renderReturns(); }
+    if(item){ item.status = item.status === '已处理' ? '待处理' : '已处理'; renderReturns(); cloudPush(); }
   });
 
   /* ---------------- support-modification export (模拟 E3D 导入数据) ---------------- */
@@ -1082,6 +1210,21 @@
   }
 
   renderAll();
+
+  /* ---------------- 昵称记忆 + 启动云端连接 ---------------- */
+  (function(){
+    var input = document.getElementById('collab-nickname');
+    if(input){
+      var saved = '';
+      try{ saved = localStorage.getItem('piping-tool-nickname') || ''; }catch(e){}
+      input.value = saved; cloud.nickname = saved;
+      input.addEventListener('change', function(){
+        cloud.nickname = input.value.trim();
+        try{ localStorage.setItem('piping-tool-nickname', cloud.nickname); }catch(e){}
+      });
+    }
+    cloudInit();
+  })();
 })();
 </script>
 </body>
