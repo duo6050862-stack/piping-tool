@@ -304,6 +304,12 @@
   .collab-bar .dot-status.err{background:#d03b3b;}
   .collab-bar .collab-nick{display:flex; align-items:center; gap:8px; margin-left:auto;}
   .collab-bar input.search{width:110px;}
+  .line-bar{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    background:var(--accent-soft); border:1px solid var(--border); border-radius:10px;
+    padding:9px 14px; margin-bottom:16px; font-size:12.5px; color:var(--ink-soft);
+  }
+  .line-bar-label{font-weight:700; color:var(--accent-strong); white-space:nowrap;}
 </style>
 </head>
 <body>
@@ -352,6 +358,14 @@
     <span><span class="dot-status" id="collab-dot"></span><span id="collab-status">协作状态：未配置（当前仅本机可见，数据不会同步给团队其他人）</span></span>
     <span class="collab-nick">当前身份：<b id="identity-display">—</b></span>
     <button class="btn" id="btn-logout" style="margin-left:auto;">切换身份</button>
+  </div>
+
+  <div class="line-bar" id="line-bar">
+    <span class="line-bar-label">当前管线</span>
+    <select id="line-select" class="search" style="min-width:240px;"></select>
+    <button class="btn" id="btn-line-new">+ 新建管线</button>
+    <button class="btn" id="btn-line-rename">重命名 / 编辑参数</button>
+    <button class="btn" id="btn-line-delete" style="color:var(--bad);">删除当前管线</button>
   </div>
 
   <div class="tabs" role="tablist" aria-label="功能区">
@@ -404,6 +418,18 @@
         <span>现版节点数：<b id="count-v2">0</b></span>
         <span>数据来源：<b id="src-label">示例数据</b></span>
       </div>
+    </div>
+
+    <div class="card">
+      <h2>批量导入多根管线（可选）</h2>
+      <p class="desc">一个人负责多根管线时，可以一次选中多份"前版"文件和多份"新版"文件，工具按文件名自动配对成对应的管线（去掉扩展名和版本字样后文件名相同就配成一对，比如 <code class="field">10234-A3A_V1.pcf</code> 和 <code class="field">10234-A3A_V2.pcf</code>）。配不上对的文件会单独列成只有一个版本的管线，之后在上面的两个框里手动补传缺的那一版就行。导入后在最上方"当前管线"下拉框里逐根切换查看、对比、登记返回条件。</p>
+      <div class="row-actions">
+        <button class="btn" id="btn-batch-v1">选择多份"前版"文件</button>
+        <input type="file" id="batch-file-v1" accept=".csv,.pcf,.txt" multiple style="display:none;">
+        <button class="btn" id="btn-batch-v2">选择多份"新版"文件</button>
+        <input type="file" id="batch-file-v2" accept=".csv,.pcf,.txt" multiple style="display:none;">
+      </div>
+      <div id="batch-status" class="muted" style="margin-top:8px;"></div>
     </div>
   </section>
 
@@ -462,7 +488,7 @@
 
       <div class="iso-card">
         <h2>变更点示意图（等轴测投影）</h2>
-        <p class="desc">按节点坐标以 30° 轴测角投影生成，虚线为前版走向，实线为现版走向；方框标记的节点带支架。示意拓扑与相对位置，非精确出图比例。</p>
+        <p class="desc">按节点坐标以 45° 轴测角投影生成，虚线为前版走向，实线为现版走向；方框标记的节点带支架。示意拓扑与相对位置，非精确出图比例。</p>
         <div id="iso-svg-wrap"></div>
       </div>
     </div>
@@ -545,11 +571,11 @@
   <!-- ================= PANEL 5: 效果统计 ================= -->
   <section class="panel" id="panel-stats">
     <div class="card">
-      <h2 style="display:flex;align-items:center;gap:8px;">效果统计 <span class="badge-demo">示例数据</span></h2>
-      <p class="desc">左侧变更点数由当前载入的数据实时计算；耗时对比为团队访谈得到的经验估计，用于说明思路，答辩前请替换为实测数据。</p>
+      <h2 style="display:flex;align-items:center;gap:8px;">效果统计 <span class="badge-demo" id="stats-line-badge">示例数据</span></h2>
+      <p class="desc">左侧变更点数由当前选中的管线实时计算；耗时对比为团队访谈得到的经验估计，用于说明思路，答辩前请替换为实测数据。</p>
       <div class="stat-grid">
         <div class="stat-tile">
-          <div class="label">本次案例识别的变更点</div>
+          <div class="label">当前管线识别的变更点</div>
           <div class="value" id="stat-changes">—</div>
           <div class="sub" id="stat-changes-sub">新增 · 修改 · 删除</div>
         </div>
@@ -564,9 +590,14 @@
           <div class="sub">人工逐条核对 → 自动生成变更清单</div>
         </div>
         <div class="stat-tile">
-          <div class="label">待处理返回条件</div>
+          <div class="label">当前管线待处理返回条件</div>
           <div class="value" id="stat-pending-returns">—</div>
           <div class="sub" id="stat-pending-returns-sub">已处理 · 项</div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">全部管线（跨管线汇总）</div>
+          <div class="value" id="stat-total-lines">—</div>
+          <div class="sub" id="stat-total-lines-sub">管线数 · 累计变更点 · 待处理返回条件</div>
         </div>
       </div>
 
@@ -668,7 +699,7 @@
      "查看网页源代码"就能看到明文，不具备真正的账号安全性 —— 仅适合组内 demo，
      不要用来保护真正敏感的密码。请把下面示例改成你们团队真实的工号/姓名/密码。 */
   var TEAM_ROSTER = [
-    { id:'3815', name:'陈坤垚', role:'配管专业', password:'1234' },
+    { id:'10086', name:'张三', role:'配管专业', password:'1234' },
     { id:'10087', name:'李四', role:'应力专业', password:'1234' },
     { id:'10088', name:'王五', role:'项目管理', password:'1234' }
   ];
@@ -721,11 +752,36 @@
      content:'滑动架处轴向载荷偏大，建议核实支撑面摩擦系数取值', rev:'Rev.2', from:'应力专业', status:'待处理', date:'2026-09-13'}
   ];
 
-  var state = {
-    v1: SAMPLE_V1, v2: SAMPLE_V2, sourceLabel: '示例数据', annotVersion: 'v2', diffFilter: 'all',
-    returns: RETURN_SEED.slice(), returnFilter: 'all', nextReturnId: 5,
-    drawings: [], currentDrawing: ''
-  };
+  /* ---------------- 管线库（一个人可以同时管理多根管线）----------------
+     每根管线各自持有一套 v1/v2 节点数据、返回条件、图纸库，互不影响；
+     顶部"当前管线"下拉框决定五个 Tab 页面里显示的是哪一根。团队云同步会把
+     所有管线一起同步过去，别人登录后能看到你上传的全部管线，切换查看。 */
+  function makeLine(lineNo){
+    return {
+      id: 'line_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7),
+      lineNo: lineNo || '未命名管线', mat: '', design: '',
+      sourceLabel: '', v1: [], v2: [], annotVersion: 'v2', diffFilter: 'all',
+      returns: [], returnFilter: 'all', nextReturnId: 1,
+      drawings: [], currentDrawing: ''
+    };
+  }
+  function safeFileName(s){
+    return String(s||'').replace(/[\\/:*?"<>|]/g,'_');
+  }
+
+  var sampleLine = makeLine(LINE_META.no);
+  sampleLine.mat = LINE_META.mat; sampleLine.design = LINE_META.design;
+  sampleLine.sourceLabel = '示例数据'; sampleLine.v1 = SAMPLE_V1; sampleLine.v2 = SAMPLE_V2;
+  sampleLine.returns = RETURN_SEED.slice(); sampleLine.nextReturnId = 5;
+
+  var state = { lines: [ sampleLine ], currentLineId: sampleLine.id };
+
+  function cur(){
+    return state.lines.filter(function(l){ return l.id === state.currentLineId; })[0] || state.lines[0];
+  }
+  function findLineByKey(key){
+    return state.lines.filter(function(l){ return l.lineNo === key; })[0];
+  }
 
   /* ---------------- helpers ---------------- */
   function byNode(list){
@@ -886,17 +942,21 @@
 
   /* ---------------- render: header ---------------- */
   function renderMeta(){
-    document.getElementById('lineNo').textContent = LINE_META.no;
-    document.getElementById('lineMat').textContent = LINE_META.mat;
-    document.getElementById('lineDesign').textContent = LINE_META.design;
-    document.getElementById('count-v1').textContent = state.v1.length;
-    document.getElementById('count-v2').textContent = state.v2.length;
-    document.getElementById('src-label').textContent = state.sourceLabel;
+    var c = cur();
+    document.getElementById('lineNo').textContent = c.lineNo || '—';
+    document.getElementById('lineMat').textContent = c.mat || '—';
+    document.getElementById('lineDesign').textContent = c.design || '—';
+    document.getElementById('count-v1').textContent = c.v1.length;
+    document.getElementById('count-v2').textContent = c.v2.length;
+    document.getElementById('src-label').textContent = c.sourceLabel || '—';
+    var badge = document.getElementById('stats-line-badge');
+    if(badge) badge.textContent = c.lineNo;
   }
 
   /* ---------------- render: annotation table ---------------- */
   function renderAnnot(){
-    var list = state.annotVersion === 'v1' ? state.v1 : state.v2;
+    var c = cur();
+    var list = c.annotVersion === 'v1' ? c.v1 : c.v2;
     var q = document.getElementById('annot-search').value.trim().toLowerCase();
     if(q){
       list = list.filter(function(r){
@@ -923,8 +983,9 @@
   }
 
   function renderDiff(){
-    var diffs = computeDiff(state.v1, state.v2);
-    if(state.diffFilter==='changed'){ diffs = diffs.filter(function(d){ return d.status!=='unchanged'; }); }
+    var c = cur();
+    var diffs = computeDiff(c.v1, c.v2);
+    if(c.diffFilter==='changed'){ diffs = diffs.filter(function(d){ return d.status!=='unchanged'; }); }
     var tbody = document.getElementById('diff-tbody');
     tbody.innerHTML = diffs.map(function(d){
       var row = d.status==='removed' ? d.a : d.b;
@@ -947,14 +1008,14 @@
 
   /* ---------------- render: isometric schematic ---------------- */
   function isoProject(n){
-    var rad = Math.PI / 6; /* 30 deg */
+    var rad = Math.PI / 4; /* 45 deg，和贵单位的轴测图习惯保持一致 */
     return { x: (n.x - n.y) * Math.cos(rad), y: (n.x + n.y) * Math.sin(rad) - n.z };
   }
 
   function renderSchematic(){
     var wrap = document.getElementById('iso-svg-wrap');
     if(!wrap) return;
-    var v1 = state.v1, v2 = state.v2;
+    var v1 = cur().v1, v2 = cur().v2;
     var pts1 = v1.slice().sort(function(a,b){return a.node-b.node;}).map(isoProject);
     var pts2 = v2.slice().sort(function(a,b){return a.node-b.node;}).map(isoProject);
     var all = pts1.concat(pts2);
@@ -1052,14 +1113,13 @@
       var updatedAt = row.updated_at || 0;
       if(updatedAt > cloud.lastAppliedAt){
         cloud.lastAppliedAt = updatedAt;
-        if(Array.isArray(doc.v1)) state.v1 = doc.v1;
-        if(Array.isArray(doc.v2)) state.v2 = doc.v2;
-        if(doc.sourceLabel) state.sourceLabel = doc.sourceLabel;
-        if(Array.isArray(doc.returns)) state.returns = doc.returns;
-        if(doc.nextReturnId) state.nextReturnId = doc.nextReturnId;
-        if(Array.isArray(doc.drawings)) state.drawings = doc.drawings;
+        if(Array.isArray(doc.lines) && doc.lines.length){
+          state.lines = doc.lines;
+          if(!state.lines.some(function(l){ return l.id === state.currentLineId; })){
+            state.currentLineId = state.lines[0].id;
+          }
+        }
         renderAll();
-        renderDrawingSelect();
         setCollabStatus('已连接 · 最近同步 '+nowTimeStr()+(row.updated_by?('（'+esc(row.updated_by)+' 更新）'):''), 'ok');
       }
     }).catch(function(err){
@@ -1070,11 +1130,7 @@
     if(!cloud.ready) return;
     var now = Date.now();
     cloud.lastAppliedAt = now;
-    var payload = {
-      v1: state.v1, v2: state.v2, sourceLabel: state.sourceLabel,
-      returns: state.returns, nextReturnId: state.nextReturnId,
-      drawings: state.drawings
-    };
+    var payload = { lines: state.lines };
     cloud.db.from(CLOUD_TABLE).upsert({
       id: CLOUD_ROW_ID, payload: payload, updated_at: now, updated_by: cloud.nickname || '匿名'
     }).then(function(res){
@@ -1089,7 +1145,8 @@
     var sel = document.getElementById('return-node');
     if(!sel) return;
     var current = sel.value;
-    var nodes = Array.from(new Set(state.v1.concat(state.v2).map(function(n){ return n.node; }))).sort(function(a,b){ return a-b; });
+    var c = cur();
+    var nodes = Array.from(new Set(c.v1.concat(c.v2).map(function(n){ return n.node; }))).sort(function(a,b){ return a-b; });
     sel.innerHTML = nodes.map(function(n){ return '<option value="'+n+'">节点 '+n+'</option>'; }).join('');
     if(nodes.indexOf(Number(current)) >= 0){ sel.value = current; }
   }
@@ -1102,9 +1159,10 @@
   }
 
   function nodePos(node){
-    var m2 = byNode(state.v2);
+    var c = cur();
+    var m2 = byNode(c.v2);
     if(m2[node]) return m2[node];
-    var m1 = byNode(state.v1);
+    var m1 = byNode(c.v1);
     return m1[node] || null;
   }
 
@@ -1125,7 +1183,7 @@
   }
 
   function findDrawing(name){
-    return state.drawings.filter(function(d){ return d.name === name; })[0];
+    return cur().drawings.filter(function(d){ return d.name === name; })[0];
   }
 
   function renderDrawingSelect(){
@@ -1133,14 +1191,14 @@
     if(!sel) return;
     var current = sel.value;
     sel.innerHTML = '<option value="">— 选择已上传的图纸 —</option>' +
-      state.drawings.map(function(d){ return '<option value="'+esc(d.name)+'">'+esc(d.name)+'（'+d.versions.length+' 个版本）</option>'; }).join('');
-    if(state.drawings.some(function(d){ return d.name === current; })) sel.value = current;
+      cur().drawings.map(function(d){ return '<option value="'+esc(d.name)+'">'+esc(d.name)+'（'+d.versions.length+' 个版本）</option>'; }).join('');
+    if(cur().drawings.some(function(d){ return d.name === current; })) sel.value = current;
   }
 
   function renderDrawingVersionList(){
     var el = document.getElementById('pdf-version-list');
     if(!el) return;
-    var d = findDrawing(state.currentDrawing);
+    var d = findDrawing(cur().currentDrawing);
     if(!d || !d.versions.length){ el.textContent = ''; return; }
     el.innerHTML = '版本记录：' + d.versions.map(function(v, i){
       return (i+1)+'. '+esc(v.time)+' · '+esc(v.uploadedBy||'')+(v.fileID ? '（已同步）' : '（仅本机，未同步）');
@@ -1196,7 +1254,7 @@
   }
 
   function selectDrawing(name){
-    state.currentDrawing = name;
+    cur().currentDrawing = name;
     var nameInput = document.getElementById('pdf-drawing-name');
     if(nameInput) nameInput.value = name;
     renderDrawingVersionList();
@@ -1218,9 +1276,9 @@
 
   function addDrawingVersion(name, versionEntry){
     var d = findDrawing(name);
-    if(!d){ d = { name: name, versions: [] }; state.drawings.push(d); }
+    if(!d){ d = { name: name, versions: [] }; cur().drawings.push(d); }
     d.versions.push(versionEntry);
-    state.currentDrawing = name;
+    cur().currentDrawing = name;
     renderDrawingSelect();
     renderDrawingVersionList();
   }
@@ -1301,7 +1359,7 @@
       if(title) pin.title = title;
       wrap.appendChild(pin);
     }
-    state.returns.forEach(function(r){
+    cur().returns.forEach(function(r){
       if(r.pdfName === pdfState.name && r.pdfVersion === pdfState.version && r.pdfX != null && r.pdfY != null){
         addPin(r.pdfX, r.pdfY, r.status === '已处理' ? 'done' : '', '节点 '+r.node+'：'+(r.content||''));
       }
@@ -1314,8 +1372,9 @@
   function renderReturns(){
     var listEl = document.getElementById('return-list');
     if(!listEl) return;
-    var list = state.returns.slice().sort(function(a,b){ return b.id - a.id; });
-    if(state.returnFilter !== 'all'){ list = list.filter(function(r){ return r.status === state.returnFilter; }); }
+    var c = cur();
+    var list = c.returns.slice().sort(function(a,b){ return b.id - a.id; });
+    if(c.returnFilter !== 'all'){ list = list.filter(function(r){ return r.status === c.returnFilter; }); }
     listEl.innerHTML = list.map(function(r){
       var fromCls = r.from === '应力专业' ? 'from-stress' : 'from-piping';
       var statusCls = r.status === '已处理' ? 'added' : 'modified';
@@ -1342,8 +1401,8 @@
       '</div>';
     }).join('') || '<p class="muted" style="padding:16px 0;">没有满足条件的记录</p>';
 
-    var pending = state.returns.filter(function(r){ return r.status === '待处理'; }).length;
-    var done = state.returns.length - pending;
+    var pending = c.returns.filter(function(r){ return r.status === '待处理'; }).length;
+    var done = c.returns.length - pending;
     var elPending = document.getElementById('return-count-pending');
     var elDone = document.getElementById('return-count-done');
     if(elPending) elPending.textContent = pending;
@@ -1355,15 +1414,36 @@
   }
 
   function renderStats(){
-    var diffs = computeDiff(state.v1, state.v2);
+    var diffs = computeDiff(cur().v1, cur().v2);
     var added = diffs.filter(function(d){return d.status==='added';}).length;
     var modified = diffs.filter(function(d){return d.status==='modified';}).length;
     var removed = diffs.filter(function(d){return d.status==='removed';}).length;
     document.getElementById('stat-changes').textContent = (added+modified+removed) + ' 处';
     document.getElementById('stat-changes-sub').textContent = '新增 '+added+' · 修改 '+modified+' · 删除 '+removed;
+
+    var totalChanges = 0, totalPending = 0;
+    state.lines.forEach(function(l){
+      var d = computeDiff(l.v1, l.v2);
+      totalChanges += d.filter(function(x){ return x.status !== 'unchanged'; }).length;
+      totalPending += l.returns.filter(function(r){ return r.status === '待处理'; }).length;
+    });
+    var elTotal = document.getElementById('stat-total-lines');
+    var elTotalSub = document.getElementById('stat-total-lines-sub');
+    if(elTotal) elTotal.textContent = state.lines.length + ' 根管线';
+    if(elTotalSub) elTotalSub.textContent = '累计变更点 '+totalChanges+' · 待处理返回条件 '+totalPending+' 项';
+  }
+
+  function renderLineSelect(){
+    var sel = document.getElementById('line-select');
+    if(!sel) return;
+    sel.innerHTML = state.lines.map(function(l){
+      return '<option value="'+l.id+'">'+esc(l.lineNo)+'（V1:'+l.v1.length+' / V2:'+l.v2.length+' 节点）</option>';
+    }).join('');
+    sel.value = state.currentLineId;
   }
 
   function renderAll(){
+    renderLineSelect();
     renderMeta(); renderAnnot(); renderDiff(); renderSchematic();
     populateReturnTypeOptions(); populateReturnNodeOptions(); renderReturns(); renderStats();
     renderDrawingSelect(); renderDrawingVersionList(); renderPdfPins();
@@ -1406,8 +1486,8 @@
           kindLabel = 'CSV';
           if(!rows.length){ document.getElementById('import-msg').textContent = '未能解析出有效行，请检查表头是否为：'+CSV_HEADERS.join('、'); return; }
         }
-        state[which] = rows;
-        state.sourceLabel = '已上传文件';
+        cur()[which] = rows;
+        cur().sourceLabel = '已上传文件';
         document.getElementById(fnameId).textContent = file.name;
         document.getElementById('import-msg').textContent = which.toUpperCase()+' 已更新为上传数据（'+kindLabel+'，'+rows.length+' 行'+(isPCF?'，管径/支架为自动解析，建议核对':'')+'）。';
         renderAll();
@@ -1420,10 +1500,11 @@
   wireDropzone('dz-v2','file-v2','fname-v2','v2');
 
   document.getElementById('btn-sample').addEventListener('click', function(){
-    state.v1 = SAMPLE_V1; state.v2 = SAMPLE_V2; state.sourceLabel = '示例数据';
+    var c = cur();
+    c.v1 = SAMPLE_V1; c.v2 = SAMPLE_V2; c.sourceLabel = '示例数据';
     document.getElementById('fname-v1').textContent = '';
     document.getElementById('fname-v2').textContent = '';
-    document.getElementById('import-msg').textContent = '已重新加载内置示例管线数据。';
+    document.getElementById('import-msg').textContent = '已重新加载内置示例管线数据（当前管线：'+esc(c.lineNo)+'）。';
     renderAll();
     cloudPush();
   });
@@ -1432,40 +1513,150 @@
     triggerDownload(CSV_HEADERS.join(',')+'\n40,3000,0,4200,150,Sch40,弹簧架 S1,\n', '标注数据模板.csv');
   });
 
+  /* ---------------- 管线库：切换 / 新建 / 重命名 / 删除 ---------------- */
+  function resetPdfViewer(){
+    var area = document.getElementById('pdf-viewer-area');
+    if(area) area.style.display = 'none';
+    pdfState.name = ''; pdfState.version = ''; pdfState.pendingPin = null;
+    var hint = document.getElementById('pdf-pin-pending-hint');
+    if(hint) hint.style.display = 'none';
+  }
+  document.getElementById('line-select').addEventListener('change', function(e){
+    state.currentLineId = e.target.value;
+    resetPdfViewer();
+    applySessionToForm();
+    renderAll();
+  });
+  document.getElementById('btn-line-new').addEventListener('click', function(){
+    var name = window.prompt('新管线的管线号/图号：', '');
+    if(name === null) return;
+    var line = makeLine(name.trim() || ('管线'+(state.lines.length+1)));
+    state.lines.push(line);
+    state.currentLineId = line.id;
+    resetPdfViewer();
+    renderAll();
+    cloudPush();
+  });
+  document.getElementById('btn-line-rename').addEventListener('click', function(){
+    var c = cur();
+    var no = window.prompt('管线号/图号：', c.lineNo); if(no === null) return;
+    var mat = window.prompt('介质/材质：', c.mat); if(mat === null) return;
+    var design = window.prompt('设计参数：', c.design); if(design === null) return;
+    c.lineNo = no.trim() || c.lineNo; c.mat = mat.trim(); c.design = design.trim();
+    renderAll();
+    cloudPush();
+  });
+  document.getElementById('btn-line-delete').addEventListener('click', function(){
+    if(state.lines.length <= 1){ window.alert('至少要保留一根管线，不能全部删除。'); return; }
+    var c = cur();
+    if(!window.confirm('确定删除管线「'+c.lineNo+'」吗？这根管线的节点数据、返回条件、图纸记录会一起删除，且无法恢复。')) return;
+    state.lines = state.lines.filter(function(l){ return l.id !== c.id; });
+    state.currentLineId = state.lines[0].id;
+    resetPdfViewer();
+    renderAll();
+    cloudPush();
+  });
+
+  /* ---------------- 批量导入多根管线（按文件名自动配对 V1/V2）---------------- */
+  function batchKeyFromFilename(name){
+    var stem = String(name || '').replace(/\.[^.]+$/, '');
+    stem = stem.replace(/[\s_\-]*([Vv]|[Rr]ev\.?|版本?|版次?)\s*\d+$/, '');
+    stem = stem.replace(/[\s_\-]*(前版|旧版|新版|现版)$/, '');
+    stem = stem.trim();
+    return stem || name;
+  }
+  function readFileAsText(file){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onload = function(){ resolve(String(reader.result)); };
+      reader.onerror = function(){ reject(reader.error || new Error('读取文件失败')); };
+      reader.readAsText(file, 'utf-8');
+    });
+  }
+  function parseFileToRows(name, text){
+    var ext = (name.split('.').pop() || '').toLowerCase();
+    var isPCF = ext === 'pcf' || (ext === 'txt' && /\b(PIPING-SPEC|PIPELINE-REFERENCE|END-POINT|UNITS-BORE)\b/.test(text));
+    return isPCF ? parsePCF(text) : parseCSV(text);
+  }
+  function handleBatchFiles(fileList, which){
+    var files = Array.from(fileList || []);
+    if(!files.length) return;
+    var statusEl = document.getElementById('batch-status');
+    if(statusEl){ statusEl.textContent = '正在解析 '+files.length+' 个文件…'; statusEl.style.color=''; }
+    Promise.all(files.map(function(file){
+      return readFileAsText(file).then(function(text){
+        return { name: file.name, rows: parseFileToRows(file.name, text) };
+      }).catch(function(err){
+        return { name: file.name, error: (err && err.message) || String(err) };
+      });
+    })).then(function(results){
+      var okNames = [], failNames = [];
+      results.forEach(function(r){
+        if(r.error || !r.rows || !r.rows.length){
+          failNames.push(r.name + (r.error ? '（'+r.error+'）' : '（未解析出有效节点）'));
+          return;
+        }
+        var key = batchKeyFromFilename(r.name);
+        var line = findLineByKey(key);
+        if(!line){ line = makeLine(key); state.lines.push(line); }
+        line[which] = r.rows;
+        line.sourceLabel = '已上传文件（批量）';
+        okNames.push(r.name + ' → ' + key);
+      });
+      if(!state.lines.some(function(l){ return l.id === state.currentLineId; })){
+        state.currentLineId = state.lines[0].id;
+      }
+      renderAll();
+      cloudPush();
+      if(statusEl){
+        statusEl.textContent = '成功导入 '+okNames.length+' 个文件' +
+          (failNames.length ? '；'+failNames.length+' 个解析失败：'+failNames.join('、') : '') +
+          '。可以在上面"当前管线"下拉框里逐根切换查看、对比。';
+        statusEl.style.color = failNames.length ? 'var(--warn)' : 'var(--good)';
+      }
+    });
+  }
+  document.getElementById('btn-batch-v1').addEventListener('click', function(){ document.getElementById('batch-file-v1').click(); });
+  document.getElementById('btn-batch-v2').addEventListener('click', function(){ document.getElementById('batch-file-v2').click(); });
+  document.getElementById('batch-file-v1').addEventListener('change', function(e){ handleBatchFiles(e.target.files, 'v1'); e.target.value=''; });
+  document.getElementById('batch-file-v2').addEventListener('change', function(e){ handleBatchFiles(e.target.files, 'v2'); e.target.value=''; });
+
   /* ---------------- annotation panel controls ---------------- */
   document.querySelectorAll('#seg-version button').forEach(function(b){
     b.addEventListener('click', function(){
       document.querySelectorAll('#seg-version button').forEach(function(x){ x.classList.remove('active'); });
-      b.classList.add('active'); state.annotVersion = b.dataset.v; renderAnnot();
+      b.classList.add('active'); cur().annotVersion = b.dataset.v; renderAnnot();
     });
   });
   document.getElementById('annot-search').addEventListener('input', renderAnnot);
   document.getElementById('btn-export-annot').addEventListener('click', function(){
-    var list = state.annotVersion==='v1' ? state.v1 : state.v2;
-    triggerDownload(toCSV(list), '标注清单_'+state.annotVersion+'.csv');
+    var c = cur();
+    var list = c.annotVersion==='v1' ? c.v1 : c.v2;
+    triggerDownload(toCSV(list), '标注清单_'+safeFileName(c.lineNo)+'_'+c.annotVersion+'.csv');
   });
 
   /* ---------------- diff panel controls ---------------- */
   document.querySelectorAll('.chip').forEach(function(c){
     c.addEventListener('click', function(){
       document.querySelectorAll('.chip').forEach(function(x){ x.classList.remove('active'); });
-      c.classList.add('active'); state.diffFilter = c.dataset.filter; renderDiff();
+      c.classList.add('active'); cur().diffFilter = c.dataset.filter; renderDiff();
     });
   });
   document.getElementById('btn-export-diff').addEventListener('click', function(){
-    var diffs = computeDiff(state.v1, state.v2).filter(function(d){ return d.status!=='unchanged'; });
+    var c = cur();
+    var diffs = computeDiff(c.v1, c.v2).filter(function(d){ return d.status!=='unchanged'; });
     var rows = diffs.map(function(d){
       var r = Object.assign({}, d.b || d.a); r.note = '['+STATUS_LABEL[d.status]+'] ' + (r.note||'');
       return r;
     });
-    triggerDownload(toCSV(rows), '变更清单.csv');
+    triggerDownload(toCSV(rows), '变更清单_'+safeFileName(c.lineNo)+'.csv');
   });
 
   /* ---------------- return conditions panel controls ---------------- */
   document.querySelectorAll('[data-return-filter]').forEach(function(c){
     c.addEventListener('click', function(){
       document.querySelectorAll('[data-return-filter]').forEach(function(x){ x.classList.remove('active'); });
-      c.classList.add('active'); state.returnFilter = c.dataset.returnFilter; renderReturns();
+      c.classList.add('active'); cur().returnFilter = c.dataset.returnFilter; renderReturns();
     });
   });
   document.getElementById('btn-add-return').addEventListener('click', function(){
@@ -1480,17 +1671,18 @@
     var contentInput = document.getElementById('return-content');
     var content = contentInput.value.trim();
     if(!content){ contentInput.focus(); return; }
+    var c = cur();
     var rec = {
-      id: state.nextReturnId++, node: Number(nodeSel.value), from: fromSel.value,
+      id: c.nextReturnId++, node: Number(nodeSel.value), from: fromSel.value,
       supportTag: supportInput.value.trim(), type: typeSel.value,
       loadX: Number(lxInput.value||0), loadY: Number(lyInput.value||0), loadZ: Number(lzInput.value||0),
-      rev: revInput.value.trim() || 'Rev.'+(state.returns.length+1),
+      rev: revInput.value.trim() || 'Rev.'+(c.returns.length+1),
       content: content, status: '待处理', date: todayStr()
     };
     if(pdfState.pendingPin){
       rec.pdfName = pdfState.name; rec.pdfX = pdfState.pendingPin.x; rec.pdfY = pdfState.pendingPin.y; rec.pdfVersion = pdfState.version;
     }
-    state.returns.push(rec);
+    c.returns.push(rec);
     contentInput.value = ''; supportInput.value = ''; lxInput.value = ''; lyInput.value = ''; lzInput.value = '';
     pdfState.pendingPin = null;
     var hint = document.getElementById('pdf-pin-pending-hint');
@@ -1503,7 +1695,7 @@
     var btn = e.target.closest('[data-toggle-return]');
     if(!btn) return;
     var id = Number(btn.getAttribute('data-toggle-return'));
-    var item = state.returns.filter(function(r){ return r.id === id; })[0];
+    var item = cur().returns.filter(function(r){ return r.id === id; })[0];
     if(item){ item.status = item.status === '已处理' ? '待处理' : '已处理'; renderReturns(); cloudPush(); }
   });
 
@@ -1527,9 +1719,10 @@
     return lines.join('\n');
   }
   document.getElementById('btn-export-returns').addEventListener('click', function(){
-    var rows = state.returns.slice().sort(function(a,b){ return a.node-b.node; });
+    var c = cur();
+    var rows = c.returns.slice().sort(function(a,b){ return a.node-b.node; });
     if(!rows.length){ return; }
-    triggerDownload(toSupportExportCSV(rows), '支架修改数据_E3D导入模拟.csv');
+    triggerDownload(toSupportExportCSV(rows), '支架修改数据_E3D导入模拟_'+safeFileName(c.lineNo)+'.csv');
   });
 
   /* ---------------- local file download (no server / no claude.ai needed) ---------------- */
