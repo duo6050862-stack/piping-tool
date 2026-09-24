@@ -260,6 +260,25 @@
   .node-badge{background:var(--surface-sunken); color:var(--ink-soft);}
   .return-summary{display:flex; gap:16px; margin-bottom:14px; font-size:12.5px; color:var(--ink-soft); flex-wrap:wrap;}
   .return-summary b{color:var(--ink); font-family:var(--font-mono);}
+
+  /* ---------- PDF 图纸标注 ---------- */
+  #pdf-viewer-wrap{position:relative; display:inline-block; max-width:100%; border:1px solid var(--border); border-radius:10px; overflow:auto; background:var(--surface-sunken); line-height:0;}
+  #pdf-canvas{display:block; cursor:crosshair; max-width:100%; height:auto;}
+  .pdf-pin{
+    position:absolute; width:22px; height:22px; margin-left:-11px; margin-top:-22px;
+    border-radius:50% 50% 50% 0; transform:rotate(-45deg);
+    background:var(--accent); border:2px solid var(--accent-ink); box-shadow:var(--shadow-sm);
+    cursor:pointer;
+  }
+  .pdf-pin.done{background:var(--good);}
+  .pdf-pin::after{
+    content:''; position:absolute; left:50%; top:50%; width:6px; height:6px; margin:-3px 0 0 -3px;
+    border-radius:50%; background:var(--accent-ink); transform:rotate(45deg);
+  }
+  .pdf-pin-pending{
+    display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:8px;
+    background:var(--accent-soft); color:var(--accent-strong); font-size:12.5px; margin-top:10px;
+  }
   .collab-bar{
     display:flex; align-items:center; gap:12px; flex-wrap:wrap;
     background:var(--surface); border:1px solid var(--border); border-radius:10px;
@@ -410,6 +429,31 @@
   <!-- ================= PANEL 4: 返回条件跟踪 ================= -->
   <section class="panel" id="panel-returns">
     <div class="card">
+      <h2>图纸标注（可选）</h2>
+      <p class="desc">上传应力/配管之间沟通用的 PDF 等轴测图，在图上点选一个位置，即可把下方"登记新的返回条件"表单和图纸上的具体位置关联起来，标注完成后一起提交。图纸文件仅保存在你本机浏览器中，不会上传到云端；如需让队友看到标注对齐的图纸，需要队友本地也打开同名 PDF。</p>
+      <div class="row-actions">
+        <button class="btn" id="btn-pdf-upload">上传 PDF 图纸</button>
+        <input type="file" id="pdf-file-input" accept="application/pdf,.pdf" style="display:none;">
+        <span class="muted" id="pdf-file-name"></span>
+      </div>
+      <div id="pdf-status" class="muted" style="margin-top:8px;"></div>
+      <div id="pdf-viewer-area" style="display:none; margin-top:12px;">
+        <div id="pdf-viewer-wrap">
+          <canvas id="pdf-canvas"></canvas>
+        </div>
+        <div id="pdf-pin-pending-hint" class="pdf-pin-pending" style="display:none;">
+          已选中图纸上一个位置 — 在下方表单填写内容后点击"提交"即可关联；再点一次图纸可以改选位置。
+        </div>
+        <p class="muted" style="margin-top:8px; font-size:12px;">点击图纸任意位置标记本次返回条件对应的图上坐标；已提交并关联的标注会显示为图钉，绿色表示已处理。</p>
+        <details class="spec" style="margin-top:10px;">
+          <summary>图纸文字内容（自动抠取，供核对用）</summary>
+          <p class="muted" style="font-size:12px; margin:8px 0;">直接从 PDF 的文字图层中提取，仅是文字抠取，不是识图/坐标解析；扫描件或纯图片型 PDF 提取不到内容。</p>
+          <pre id="pdf-text-content" style="white-space:pre-wrap; font-size:11.5px; max-height:180px; overflow:auto; margin:0; font-family:var(--font-mono); color:var(--ink-soft);"></pre>
+        </details>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>登记新的返回条件</h2>
       <p class="desc">和应力专业约定的结构化返回模板：支架位号 / 位置 / 类型 / 载荷 X、Y、Z / 调整建议 / 版次，替代散落在邮件、PDF 手标里的意见，避免版次一多就遗漏。</p>
       <div class="return-form">
@@ -527,6 +571,14 @@
 
 <!-- 团队协作用（可选）：腾讯云开发 CloudBase Web SDK。未配置环境ID时不影响本机离线使用。 -->
 <script src="https://static.cloudbase.net/cloudbase-js-sdk/3.9.4/cloudbase.full.js"></script>
+<!-- PDF 图纸预览用（可选）：PDF.js。模块脚本会在解析完成后异步执行，
+     不影响下面主脚本（经典脚本）的同步执行；主脚本只在用户点击"上传图纸"后才会用到 window.pdfjsLib，
+     那时模块脚本必定已经加载完毕，因此顺序上是安全的。 -->
+<script type="module">
+  import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.3.289/pdf.min.mjs';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.3.289/pdf.worker.min.mjs';
+  window.pdfjsLib = pdfjsLib;
+</script>
 <script>
 (function(){
   "use strict";
@@ -557,8 +609,8 @@
      不配置的话，网页自动退回"仅本机可见"的离线模式，其余功能不受影响。
      提示：这条集成路径我没能实机连线测试，如果"协作状态"栏报错，把报错文字或
      控制台截图发回来，我们一起对照调整。 */
-  var CLOUDBASE_ENV_ID = 'piping-tool-d5gkh19uz3ef34915';
-  var CLOUDBASE_ACCESS_KEY = 'eyJhbGciOiJSUzI1NiIsImtpZCI6IjFhNzY2MzAxLWFhOTEtNDBlMS1iYzdlLTYyZjA5NjM3NGM1YSJ9.eyJpc3MiOiJodHRwczovL3BpcGluZy10b29sLWQ1Z2toMTl1ejNlZjM0OTE1LmFwLXNoYW5naGFpLnRjYi1hcGkudGVuY2VudGNsb3VkYXBpLmNvbSIsInN1YiI6ImFub24iLCJhdWQiOiJwaXBpbmctdG9vbC1kNWdraDE5dXozZWYzNDkxNSIsImV4cCI6NDA5MzEyMjU4MSwiaWF0IjoxNzg5NDM5MzgxLCJub25jZSI6ImtqZHNYZmVzUWUyZjdrcTNoNmJnQ0EiLCJhdF9oYXNoIjoia2pkc1hmZXNRZTJmN2txM2g2YmdDQSIsIm5hbWUiOiJBbm9ueW1vdXMiLCJzY29wZSI6ImFub255bW91cyIsInByb2plY3RfaWQiOiJwaXBpbmctdG9vbC1kNWdraDE5dXozZWYzNDkxNSIsIm1ldGEiOnsicGxhdGZvcm0iOiJQdWJsaXNoYWJsZUtleSJ9LCJyb2xlIjoiYW5vbiIsImlzX2Fub255bW91cyI6dHJ1ZSwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiYW5vbnltb3VzIiwicHJvdmlkZXJzIjpbImFub255bW91cyJdfSwidXNlcl9tZXRhZGF0YSI6eyJuYW1lIjoiQW5vbnltb3VzIn0sInVzZXJfdHlwZSI6IiIsImNsaWVudF90eXBlIjoiY2xpZW50X3VzZXIiLCJpc19zeXN0ZW1fYWRtaW4iOmZhbHNlfQ.Q9jWDTonihrE6yOUC4w8_dAX908gB9UNQq6rfWqzov5WmueDQZYEXmdp4xvMEpFKfIDW10ClMYvb6tKxKOKlwJh3zEjN2UoJY8kQSzYaa6mZqHDmbjkcJSoK0us0mbjbXQxweLEmud0fBgi-kCSMXUYA_2zUFlSVf1ydGdym5uwCaV7Ws72RMRT5hEOA_cQjrPahpN2drNmAtq86fyy4RwWd8vnScOlzkMgaTcdYGypyprBPDSCe6YP2XnGxJLl_1fFY_SfB9nWE2sBooF4MsrtLEeU7c_i260nMSUrkQUU5p2fyY34fuarfMmtsAk_8QfNgopErpkW30WoqpXjgxA';
+  var CLOUDBASE_ENV_ID = '替换成你的环境ID';
+  var CLOUDBASE_ACCESS_KEY = '替换成你的 Publishable Key';
   var CLOUD_TABLE = 'piping_workspace';
   var CLOUD_ROW_ID = 'shared';
   var CLOUD_POLL_MS = 8000;
@@ -983,6 +1035,107 @@
     return m1[node] || null;
   }
 
+  /* ---------------- PDF 图纸标注（可选功能） ---------------- */
+  var pdfState = { name: '', doc: null, scale: 1, pendingPin: null };
+
+  function wirePdfUpload(){
+    var btn = document.getElementById('btn-pdf-upload');
+    var input = document.getElementById('pdf-file-input');
+    if(!btn || !input) return;
+    btn.addEventListener('click', function(){ input.click(); });
+    input.addEventListener('change', function(){
+      if(input.files && input.files[0]) loadPdfFile(input.files[0]);
+    });
+  }
+
+  function setPdfStatus(text, kind){
+    var el = document.getElementById('pdf-status');
+    if(!el) return;
+    el.textContent = text;
+    el.style.color = kind === 'err' ? 'var(--bad)' : (kind === 'ok' ? 'var(--good)' : '');
+  }
+
+  function loadPdfFile(file){
+    if(typeof window.pdfjsLib === 'undefined'){
+      setPdfStatus('PDF 预览组件还未加载完成，请稍等一两秒后重试（若长期无效，可能是网络无法访问 cdnjs.cloudflare.com）。', 'err');
+      return;
+    }
+    pdfState.name = file.name;
+    pdfState.pendingPin = null;
+    document.getElementById('pdf-file-name').textContent = file.name;
+    setPdfStatus('正在解析 PDF…');
+    var reader = new FileReader();
+    reader.onload = function(){
+      var typedArray = new Uint8Array(reader.result);
+      window.pdfjsLib.getDocument({ data: typedArray }).promise.then(function(pdf){
+        pdfState.doc = pdf;
+        return pdf.getPage(1);
+      }).then(function(page){
+        var viewport = page.getViewport({ scale: pdfState.scale });
+        var maxW = 900;
+        if(viewport.width > maxW){
+          pdfState.scale = pdfState.scale * (maxW / viewport.width);
+          viewport = page.getViewport({ scale: pdfState.scale });
+        }
+        var canvas = document.getElementById('pdf-canvas');
+        canvas.width = viewport.width; canvas.height = viewport.height;
+        var ctx = canvas.getContext('2d');
+        return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function(){
+          return page.getTextContent();
+        });
+      }).then(function(textContent){
+        var text = textContent.items.map(function(it){ return it.str; }).join(' ').trim();
+        document.getElementById('pdf-text-content').textContent = text || '（未提取到文字，可能是扫描件/纯图片型 PDF）';
+        document.getElementById('pdf-viewer-area').style.display = '';
+        setPdfStatus('已加载「'+file.name+'」，点击图纸任意位置即可标注返回条件的图上坐标。', 'ok');
+        renderPdfPins();
+      }).catch(function(err){
+        setPdfStatus('PDF 解析失败：'+(err && err.message || err), 'err');
+      });
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function wirePdfCanvasClick(){
+    var canvas = document.getElementById('pdf-canvas');
+    if(!canvas) return;
+    canvas.addEventListener('click', function(e){
+      var rect = canvas.getBoundingClientRect();
+      var x = (e.clientX - rect.left) / rect.width;
+      var y = (e.clientY - rect.top) / rect.height;
+      pdfState.pendingPin = { x: x, y: y };
+      var hint = document.getElementById('pdf-pin-pending-hint');
+      if(hint) hint.style.display = '';
+      renderPdfPins();
+    });
+  }
+
+  function renderPdfPins(){
+    var area = document.getElementById('pdf-viewer-area');
+    var wrap = document.getElementById('pdf-viewer-wrap');
+    if(!wrap || !area || area.style.display === 'none') return;
+    var old = wrap.querySelectorAll('.pdf-pin');
+    old.forEach(function(p){ p.remove(); });
+    var canvas = document.getElementById('pdf-canvas');
+    if(!canvas || !canvas.width) return;
+    function addPin(xFrac, yFrac, cls, title){
+      var pin = document.createElement('div');
+      pin.className = 'pdf-pin' + (cls ? (' '+cls) : '');
+      pin.style.left = (xFrac * canvas.clientWidth) + 'px';
+      pin.style.top = (yFrac * canvas.clientHeight) + 'px';
+      if(title) pin.title = title;
+      wrap.appendChild(pin);
+    }
+    state.returns.forEach(function(r){
+      if(r.pdfName === pdfState.name && r.pdfX != null && r.pdfY != null){
+        addPin(r.pdfX, r.pdfY, r.status === '已处理' ? 'done' : '', '节点 '+r.node+'：'+(r.content||''));
+      }
+    });
+    if(pdfState.pendingPin){
+      addPin(pdfState.pendingPin.x, pdfState.pendingPin.y, '', '待提交的新标注');
+    }
+  }
+
   function renderReturns(){
     var listEl = document.getElementById('return-list');
     if(!listEl) return;
@@ -1000,6 +1153,7 @@
           (r.supportTag ? '<span class="chip-tag from-piping">支架 '+esc(r.supportTag)+'</span>' : '') +
           '<span class="chip-tag from-piping">'+esc(r.type||'—')+'</span>' +
           '<span class="chip-tag '+fromCls+'">'+esc(r.from)+'</span>' +
+          (r.pdfX != null ? '<span class="chip-tag from-stress" title="'+esc(r.pdfName||'')+'">图上已标注</span>' : '') +
           '<span class="muted" style="margin-left:auto">'+esc(r.rev||'')+' · '+r.date+'</span>' +
         '</div>' +
         '<p class="return-content">'+esc(r.content)+'</p>' +
@@ -1037,6 +1191,7 @@
   function renderAll(){
     renderMeta(); renderAnnot(); renderDiff(); renderSchematic();
     populateReturnTypeOptions(); populateReturnNodeOptions(); renderReturns(); renderStats();
+    renderPdfPins();
   }
 
   /* ---------------- tabs ---------------- */
@@ -1150,15 +1305,23 @@
     var contentInput = document.getElementById('return-content');
     var content = contentInput.value.trim();
     if(!content){ contentInput.focus(); return; }
-    state.returns.push({
+    var rec = {
       id: state.nextReturnId++, node: Number(nodeSel.value), from: fromSel.value,
       supportTag: supportInput.value.trim(), type: typeSel.value,
       loadX: Number(lxInput.value||0), loadY: Number(lyInput.value||0), loadZ: Number(lzInput.value||0),
       rev: revInput.value.trim() || 'Rev.'+(state.returns.length+1),
       content: content, status: '待处理', date: todayStr()
-    });
+    };
+    if(pdfState.pendingPin){
+      rec.pdfName = pdfState.name; rec.pdfX = pdfState.pendingPin.x; rec.pdfY = pdfState.pendingPin.y;
+    }
+    state.returns.push(rec);
     contentInput.value = ''; supportInput.value = ''; lxInput.value = ''; lyInput.value = ''; lzInput.value = '';
+    pdfState.pendingPin = null;
+    var hint = document.getElementById('pdf-pin-pending-hint');
+    if(hint) hint.style.display = 'none';
     renderReturns();
+    renderPdfPins();
     cloudPush();
   });
   document.getElementById('return-list').addEventListener('click', function(e){
@@ -1209,6 +1372,8 @@
     }
   }
 
+  wirePdfUpload();
+  wirePdfCanvasClick();
   renderAll();
 
   /* ---------------- 昵称记忆 + 启动云端连接 ---------------- */
