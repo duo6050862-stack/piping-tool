@@ -279,6 +279,21 @@
     display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:8px;
     background:var(--accent-soft); color:var(--accent-strong); font-size:12.5px; margin-top:10px;
   }
+  /* ---------- login ---------- */
+  .login-overlay{
+    position:fixed; inset:0; background:var(--bg); z-index:100;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .login-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    box-shadow:var(--shadow-sm); padding:28px 26px; max-width:380px; width:100%;
+  }
+  .login-field{margin-top:14px; display:flex; flex-direction:column; gap:5px;}
+  .login-field label{font-size:12.5px; color:var(--ink-soft); font-weight:600;}
+  .login-error{
+    margin-top:12px; padding:8px 10px; border-radius:8px; font-size:12.5px;
+    background:var(--bad-soft); color:var(--bad);
+  }
   .collab-bar{
     display:flex; align-items:center; gap:12px; flex-wrap:wrap;
     background:var(--surface); border:1px solid var(--border); border-radius:10px;
@@ -292,7 +307,33 @@
 </style>
 </head>
 <body>
-<div class="app">
+<div class="login-overlay" id="login-overlay">
+  <div class="login-card">
+    <p class="eyebrow">配管工程室 · AI 创新攻坚大赛原型</p>
+    <h1 style="margin:2px 0 6px;">配管应力协同台</h1>
+    <p class="desc">请选择专业身份并登录。这是组内演示用的轻量身份识别（工号/密码保存在本页面配置里），不是正式的账号安全系统，仅用来区分角色、显示对应功能、记录"谁标注/上传的"。</p>
+    <div class="login-field">
+      <label for="login-role">专业</label>
+      <select id="login-role" class="search">
+        <option>配管专业</option>
+        <option>应力专业</option>
+        <option>项目管理</option>
+      </select>
+    </div>
+    <div class="login-field">
+      <label for="login-id">工号</label>
+      <input type="text" id="login-id" class="search" placeholder="如：10086" autocomplete="off">
+    </div>
+    <div class="login-field">
+      <label for="login-password">密码</label>
+      <input type="password" id="login-password" class="search" placeholder="密码" autocomplete="off">
+    </div>
+    <div id="login-error" class="login-error" style="display:none;"></div>
+    <button class="btn primary" id="btn-login" style="width:100%; margin-top:6px;">登录</button>
+  </div>
+</div>
+
+<div class="app" id="app-root" style="display:none;">
 
   <div class="topbar">
     <div>
@@ -309,7 +350,8 @@
 
   <div class="collab-bar" id="collab-bar">
     <span><span class="dot-status" id="collab-dot"></span><span id="collab-status">协作状态：未配置（当前仅本机可见，数据不会同步给团队其他人）</span></span>
-    <span class="collab-nick">你的称呼 <input type="text" id="collab-nickname" class="search" placeholder="如：小李"></span>
+    <span class="collab-nick">当前身份：<b id="identity-display">—</b></span>
+    <button class="btn" id="btn-logout" style="margin-left:auto;">切换身份</button>
   </div>
 
   <div class="tabs" role="tablist" aria-label="功能区">
@@ -430,13 +472,16 @@
   <section class="panel" id="panel-returns">
     <div class="card">
       <h2>图纸标注（可选）</h2>
-      <p class="desc">上传应力/配管之间沟通用的 PDF 等轴测图，在图上点选一个位置，即可把下方"登记新的返回条件"表单和图纸上的具体位置关联起来，标注完成后一起提交。图纸文件仅保存在你本机浏览器中，不会上传到云端；如需让队友看到标注对齐的图纸，需要队友本地也打开同名 PDF。</p>
-      <div class="row-actions">
-        <button class="btn" id="btn-pdf-upload">上传 PDF 图纸</button>
+      <p class="desc">配管专业上传管道等轴测图 PDF；应力专业登录后即可直接查看、点选标注并登记结构化返回条件；谁都可以把修改/核实后的图纸再上传一版，供其他专业查看最新版本。<span id="pdf-cloud-hint"></span></p>
+      <div class="return-form">
+        <select id="pdf-drawing-select" class="search" style="min-width:200px;"><option value="">— 选择已上传的图纸 —</option></select>
+        <input type="text" id="pdf-drawing-name" class="search" placeholder="图纸名称/图号（如 8&quot;-P-10234-A3A 轴测图）" style="flex:1; min-width:220px;">
+        <button class="btn primary" id="btn-pdf-upload">上传 PDF</button>
         <input type="file" id="pdf-file-input" accept="application/pdf,.pdf" style="display:none;">
-        <span class="muted" id="pdf-file-name"></span>
       </div>
+      <p class="muted" style="font-size:12px; margin-top:6px;">从下拉框选一份已有图纸可直接查看最新版本；如果"图纸名称"里填的是新名字，上传后会作为一份新图纸，填已有名字则作为该图纸的新版本。</p>
       <div id="pdf-status" class="muted" style="margin-top:8px;"></div>
+      <div id="pdf-version-list" class="muted" style="margin-top:4px; font-size:12px;"></div>
       <div id="pdf-viewer-area" style="display:none; margin-top:12px;">
         <div id="pdf-viewer-wrap">
           <canvas id="pdf-canvas"></canvas>
@@ -465,6 +510,7 @@
         <select id="return-from" class="search">
           <option>应力专业</option>
           <option>配管专业</option>
+          <option>项目管理</option>
         </select>
       </div>
       <div class="return-form" style="margin-top:10px;">
@@ -614,7 +660,28 @@
   var CLOUD_TABLE = 'piping_workspace';
   var CLOUD_ROW_ID = 'shared';
   var CLOUD_POLL_MS = 8000;
-  var cloud = { db:null, ready:false, lastAppliedAt:0, nickname:'' };
+  var cloud = { db:null, app:null, ready:false, lastAppliedAt:0, nickname:'' };
+
+  /* ---------------- 登录身份（轻量版，非正式账号安全系统）----------------
+     只用来区分"配管专业 / 应力专业 / 项目管理"角色、显示姓名，并在返回条件、
+     图纸版本记录里标注"谁做的"。工号/密码就写在这份文件里，打开浏览器
+     "查看网页源代码"就能看到明文，不具备真正的账号安全性 —— 仅适合组内 demo，
+     不要用来保护真正敏感的密码。请把下面示例改成你们团队真实的工号/姓名/密码。 */
+  var TEAM_ROSTER = [
+    { id:'10086', name:'张三', role:'配管专业', password:'1234' },
+    { id:'10087', name:'李四', role:'应力专业', password:'1234' },
+    { id:'10088', name:'王五', role:'项目管理', password:'1234' }
+  ];
+  var LOGIN_KEY = 'piping-tool-session';
+  var session = { id:'', name:'', role:'' };
+
+  /* ---------------- 图纸库（可选，用云开发"云存储"保存 PDF 文件本身）----------------
+     数据库里只放"哪份图纸、哪个版本、谁传的、文件在云存储的哪个位置"这些元数据
+     （随 state 一起走上面已有的 SQL 同步）；PDF 文件本体存进云存储，需要额外去
+     控制台开通"存储"并设置权限（建议先设成"所有用户可读、所有用户可写"，仅供
+     组内 demo，正式使用前应收紧）。未配置/未开通云存储时，图纸只能在上传它的
+     这台设备上查看，其余功能不受影响。这段云存储集成同样没有实机连线测试过，
+     如果上传/查看报错，把报错信息发回来一起看。 */
 
   var SAMPLE_V1 = [
     {node:10, x:0,    y:0,    z:3200, dn:150, sch:'Sch40', support:'固定架 A1', note:'设备接口 N1'},
@@ -656,7 +723,8 @@
 
   var state = {
     v1: SAMPLE_V1, v2: SAMPLE_V2, sourceLabel: '示例数据', annotVersion: 'v2', diffFilter: 'all',
-    returns: RETURN_SEED.slice(), returnFilter: 'all', nextReturnId: 5
+    returns: RETURN_SEED.slice(), returnFilter: 'all', nextReturnId: 5,
+    drawings: [], currentDrawing: ''
   };
 
   /* ---------------- helpers ---------------- */
@@ -942,6 +1010,7 @@
     var d = document.getElementById('collab-dot');
     if(t) t.textContent = '协作状态：'+text;
     if(d) d.className = 'dot-status'+(kind?(' '+kind):'');
+    updatePdfCloudHint();
   }
   function cloudConfigured(){
     return CLOUDBASE_ENV_ID && CLOUDBASE_ENV_ID.indexOf('替换成') === -1 &&
@@ -961,6 +1030,7 @@
       }
       app.auth.signInAnonymously().then(function(){
         cloud.db = app.rdb();
+        cloud.app = app;
         cloud.ready = true;
         setCollabStatus('已连接，正在同步团队数据…', 'ok');
         cloudPull(true);
@@ -987,7 +1057,9 @@
         if(doc.sourceLabel) state.sourceLabel = doc.sourceLabel;
         if(Array.isArray(doc.returns)) state.returns = doc.returns;
         if(doc.nextReturnId) state.nextReturnId = doc.nextReturnId;
+        if(Array.isArray(doc.drawings)) state.drawings = doc.drawings;
         renderAll();
+        renderDrawingSelect();
         setCollabStatus('已连接 · 最近同步 '+nowTimeStr()+(row.updated_by?('（'+esc(row.updated_by)+' 更新）'):''), 'ok');
       }
     }).catch(function(err){
@@ -1000,7 +1072,8 @@
     cloud.lastAppliedAt = now;
     var payload = {
       v1: state.v1, v2: state.v2, sourceLabel: state.sourceLabel,
-      returns: state.returns, nextReturnId: state.nextReturnId
+      returns: state.returns, nextReturnId: state.nextReturnId,
+      drawings: state.drawings
     };
     cloud.db.from(CLOUD_TABLE).upsert({
       id: CLOUD_ROW_ID, payload: payload, updated_at: now, updated_by: cloud.nickname || '匿名'
@@ -1035,18 +1108,8 @@
     return m1[node] || null;
   }
 
-  /* ---------------- PDF 图纸标注（可选功能） ---------------- */
-  var pdfState = { name: '', doc: null, scale: 1, pendingPin: null };
-
-  function wirePdfUpload(){
-    var btn = document.getElementById('btn-pdf-upload');
-    var input = document.getElementById('pdf-file-input');
-    if(!btn || !input) return;
-    btn.addEventListener('click', function(){ input.click(); });
-    input.addEventListener('change', function(){
-      if(input.files && input.files[0]) loadPdfFile(input.files[0]);
-    });
-  }
+  /* ---------------- PDF 图纸标注 + 图纸库（可选功能） ---------------- */
+  var pdfState = { name: '', version: '', doc: null, scale: 1, pendingPin: null };
 
   function setPdfStatus(text, kind){
     var el = document.getElementById('pdf-status');
@@ -1055,45 +1118,157 @@
     el.style.color = kind === 'err' ? 'var(--bad)' : (kind === 'ok' ? 'var(--good)' : '');
   }
 
-  function loadPdfFile(file){
+  function updatePdfCloudHint(){
+    var el = document.getElementById('pdf-cloud-hint');
+    if(!el) return;
+    el.textContent = cloud.ready ? '' : '（当前未连接团队云端，上传的图纸暂时只在本机可见）';
+  }
+
+  function findDrawing(name){
+    return state.drawings.filter(function(d){ return d.name === name; })[0];
+  }
+
+  function renderDrawingSelect(){
+    var sel = document.getElementById('pdf-drawing-select');
+    if(!sel) return;
+    var current = sel.value;
+    sel.innerHTML = '<option value="">— 选择已上传的图纸 —</option>' +
+      state.drawings.map(function(d){ return '<option value="'+esc(d.name)+'">'+esc(d.name)+'（'+d.versions.length+' 个版本）</option>'; }).join('');
+    if(state.drawings.some(function(d){ return d.name === current; })) sel.value = current;
+  }
+
+  function renderDrawingVersionList(){
+    var el = document.getElementById('pdf-version-list');
+    if(!el) return;
+    var d = findDrawing(state.currentDrawing);
+    if(!d || !d.versions.length){ el.textContent = ''; return; }
+    el.innerHTML = '版本记录：' + d.versions.map(function(v, i){
+      return (i+1)+'. '+esc(v.time)+' · '+esc(v.uploadedBy||'')+(v.fileID ? '（已同步）' : '（仅本机，未同步）');
+    }).join('　');
+  }
+
+  function renderPdfFromArrayBuffer(typedArray, displayName, versionTime){
     if(typeof window.pdfjsLib === 'undefined'){
       setPdfStatus('PDF 预览组件还未加载完成，请稍等一两秒后重试（若长期无效，可能是网络无法访问 cdnjs.cloudflare.com）。', 'err');
       return;
     }
-    pdfState.name = file.name;
+    pdfState.name = displayName;
+    pdfState.version = versionTime || '';
     pdfState.pendingPin = null;
-    document.getElementById('pdf-file-name').textContent = file.name;
-    setPdfStatus('正在解析 PDF…');
+    var hint = document.getElementById('pdf-pin-pending-hint');
+    if(hint) hint.style.display = 'none';
+    window.pdfjsLib.getDocument({ data: typedArray }).promise.then(function(pdf){
+      pdfState.doc = pdf;
+      return pdf.getPage(1);
+    }).then(function(page){
+      var viewport = page.getViewport({ scale: pdfState.scale });
+      var maxW = 900;
+      if(viewport.width > maxW){
+        pdfState.scale = pdfState.scale * (maxW / viewport.width);
+        viewport = page.getViewport({ scale: pdfState.scale });
+      }
+      var canvas = document.getElementById('pdf-canvas');
+      canvas.width = viewport.width; canvas.height = viewport.height;
+      var ctx = canvas.getContext('2d');
+      return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function(){
+        return page.getTextContent();
+      });
+    }).then(function(textContent){
+      var text = textContent.items.map(function(it){ return it.str; }).join(' ').trim();
+      document.getElementById('pdf-text-content').textContent = text || '（未提取到文字，可能是扫描件/纯图片型 PDF）';
+      document.getElementById('pdf-viewer-area').style.display = '';
+      renderPdfPins();
+    }).catch(function(err){
+      setPdfStatus('PDF 解析失败：'+(err && err.message || err), 'err');
+    });
+  }
+
+  function fetchDrawingVersionBytes(version){
+    if(!cloud.ready || !cloud.app) return Promise.reject(new Error('未连接团队云端，无法拉取该图纸文件'));
+    return cloud.app.getTempFileURL({ fileList:[version.fileID] }).then(function(res){
+      var item = res && res.fileList && res.fileList[0];
+      if(!item || item.code){ throw new Error((item && item.code) || '获取图纸地址失败'); }
+      return fetch(item.tempFileURL);
+    }).then(function(r){
+      if(!r.ok) throw new Error('下载图纸失败：HTTP '+r.status);
+      return r.arrayBuffer();
+    }).then(function(buf){ return new Uint8Array(buf); });
+  }
+
+  function selectDrawing(name){
+    state.currentDrawing = name;
+    var nameInput = document.getElementById('pdf-drawing-name');
+    if(nameInput) nameInput.value = name;
+    renderDrawingVersionList();
+    var d = findDrawing(name);
+    if(!d || !d.versions.length) return;
+    var v = d.versions[d.versions.length - 1];
+    if(!v.fileID){
+      setPdfStatus('该图纸最新版本还没有同步到云端存储（可能仍在上传，或上传失败/未连接云端），暂时无法在这台设备打开。', 'err');
+      return;
+    }
+    setPdfStatus('正在从云端加载「'+name+'」…');
+    fetchDrawingVersionBytes(v).then(function(bytes){
+      renderPdfFromArrayBuffer(bytes, name, v.time);
+      setPdfStatus('已加载「'+name+'」（'+(v.uploadedBy||'')+' 于 '+v.time+' 上传），点击图纸任意位置即可标注返回条件的图上坐标。', 'ok');
+    }).catch(function(err){
+      setPdfStatus('加载失败：'+(err && err.message || err), 'err');
+    });
+  }
+
+  function addDrawingVersion(name, versionEntry){
+    var d = findDrawing(name);
+    if(!d){ d = { name: name, versions: [] }; state.drawings.push(d); }
+    d.versions.push(versionEntry);
+    state.currentDrawing = name;
+    renderDrawingSelect();
+    renderDrawingVersionList();
+  }
+
+  function uploadDrawingFile(file, drawingName){
+    drawingName = (drawingName || '').trim() || file.name.replace(/\.pdf$/i, '');
     var reader = new FileReader();
     reader.onload = function(){
-      var typedArray = new Uint8Array(reader.result);
-      window.pdfjsLib.getDocument({ data: typedArray }).promise.then(function(pdf){
-        pdfState.doc = pdf;
-        return pdf.getPage(1);
-      }).then(function(page){
-        var viewport = page.getViewport({ scale: pdfState.scale });
-        var maxW = 900;
-        if(viewport.width > maxW){
-          pdfState.scale = pdfState.scale * (maxW / viewport.width);
-          viewport = page.getViewport({ scale: pdfState.scale });
-        }
-        var canvas = document.getElementById('pdf-canvas');
-        canvas.width = viewport.width; canvas.height = viewport.height;
-        var ctx = canvas.getContext('2d');
-        return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function(){
-          return page.getTextContent();
+      var bytes = new Uint8Array(reader.result);
+      var versionEntry = {
+        fileID: '', cloudPath: '',
+        uploadedBy: (session.name || session.id || '匿名') + (session.role ? '（'+session.role+'）' : ''),
+        role: session.role || '', time: todayStr() + ' ' + nowTimeStr()
+      };
+      renderPdfFromArrayBuffer(bytes, drawingName, versionEntry.time);
+      addDrawingVersion(drawingName, versionEntry);
+      if(cloud.ready && cloud.app){
+        setPdfStatus('正在上传到云端存储…');
+        var cloudPath = 'drawings/' + Date.now() + '_' + file.name;
+        cloud.app.uploadFile({ cloudPath: cloudPath, filePath: file }).then(function(res){
+          versionEntry.fileID = res.fileID;
+          versionEntry.cloudPath = cloudPath;
+          renderDrawingVersionList();
+          cloudPush();
+          setPdfStatus('已上传「'+drawingName+'」并同步到云端，团队其他人登录后可以看到最新版本。', 'ok');
+        }).catch(function(err){
+          setPdfStatus('云端上传失败：'+(err && err.message || err)+'（可能是控制台里的"存储"还没开通，或权限没放开）；图纸目前只在你这台设备上可见。', 'err');
         });
-      }).then(function(textContent){
-        var text = textContent.items.map(function(it){ return it.str; }).join(' ').trim();
-        document.getElementById('pdf-text-content').textContent = text || '（未提取到文字，可能是扫描件/纯图片型 PDF）';
-        document.getElementById('pdf-viewer-area').style.display = '';
-        setPdfStatus('已加载「'+file.name+'」，点击图纸任意位置即可标注返回条件的图上坐标。', 'ok');
-        renderPdfPins();
-      }).catch(function(err){
-        setPdfStatus('PDF 解析失败：'+(err && err.message || err), 'err');
-      });
+      } else {
+        setPdfStatus('已加载「'+drawingName+'」（未连接团队云端，仅本机可见，其他人暂时看不到这份图纸）。', 'ok');
+      }
     };
     reader.readAsArrayBuffer(file);
+  }
+
+  function wireDrawingUI(){
+    var sel = document.getElementById('pdf-drawing-select');
+    var nameInput = document.getElementById('pdf-drawing-name');
+    var btn = document.getElementById('btn-pdf-upload');
+    var input = document.getElementById('pdf-file-input');
+    if(sel) sel.addEventListener('change', function(){
+      if(sel.value) selectDrawing(sel.value);
+    });
+    if(btn && input) btn.addEventListener('click', function(){ input.click(); });
+    if(input) input.addEventListener('change', function(){
+      if(input.files && input.files[0]) uploadDrawingFile(input.files[0], nameInput ? nameInput.value : '');
+      input.value = '';
+    });
   }
 
   function wirePdfCanvasClick(){
@@ -1127,7 +1302,7 @@
       wrap.appendChild(pin);
     }
     state.returns.forEach(function(r){
-      if(r.pdfName === pdfState.name && r.pdfX != null && r.pdfY != null){
+      if(r.pdfName === pdfState.name && r.pdfVersion === pdfState.version && r.pdfX != null && r.pdfY != null){
         addPin(r.pdfX, r.pdfY, r.status === '已处理' ? 'done' : '', '节点 '+r.node+'：'+(r.content||''));
       }
     });
@@ -1191,7 +1366,7 @@
   function renderAll(){
     renderMeta(); renderAnnot(); renderDiff(); renderSchematic();
     populateReturnTypeOptions(); populateReturnNodeOptions(); renderReturns(); renderStats();
-    renderPdfPins();
+    renderDrawingSelect(); renderDrawingVersionList(); renderPdfPins();
   }
 
   /* ---------------- tabs ---------------- */
@@ -1313,7 +1488,7 @@
       content: content, status: '待处理', date: todayStr()
     };
     if(pdfState.pendingPin){
-      rec.pdfName = pdfState.name; rec.pdfX = pdfState.pendingPin.x; rec.pdfY = pdfState.pendingPin.y;
+      rec.pdfName = pdfState.name; rec.pdfX = pdfState.pendingPin.x; rec.pdfY = pdfState.pendingPin.y; rec.pdfVersion = pdfState.version;
     }
     state.returns.push(rec);
     contentInput.value = ''; supportInput.value = ''; lxInput.value = ''; lyInput.value = ''; lzInput.value = '';
@@ -1372,24 +1547,79 @@
     }
   }
 
-  wirePdfUpload();
+  wireDrawingUI();
   wirePdfCanvasClick();
   renderAll();
 
-  /* ---------------- 昵称记忆 + 启动云端连接 ---------------- */
-  (function(){
-    var input = document.getElementById('collab-nickname');
-    if(input){
-      var saved = '';
-      try{ saved = localStorage.getItem('piping-tool-nickname') || ''; }catch(e){}
-      input.value = saved; cloud.nickname = saved;
-      input.addEventListener('change', function(){
-        cloud.nickname = input.value.trim();
-        try{ localStorage.setItem('piping-tool-nickname', cloud.nickname); }catch(e){}
-      });
+  /* ---------------- 登录 / 身份切换 ---------------- */
+  function applySessionToForm(){
+    var sel = document.getElementById('return-from');
+    if(sel && session.role && Array.from(sel.options).some(function(o){ return o.value === session.role; })){
+      sel.value = session.role;
     }
-    cloudInit();
-  })();
+  }
+  function showApp(){
+    var overlay = document.getElementById('login-overlay');
+    var root = document.getElementById('app-root');
+    if(overlay) overlay.style.display = 'none';
+    if(root) root.style.display = '';
+    var idEl = document.getElementById('identity-display');
+    if(idEl) idEl.textContent = (session.name || session.id) + '（' + session.role + '）';
+    cloud.nickname = (session.name || session.id) + '(' + session.role + ')';
+    applySessionToForm();
+  }
+  function showLogin(){
+    var overlay = document.getElementById('login-overlay');
+    var root = document.getElementById('app-root');
+    if(overlay) overlay.style.display = '';
+    if(root) root.style.display = 'none';
+    var err = document.getElementById('login-error');
+    if(err) err.style.display = 'none';
+    var pw = document.getElementById('login-password');
+    if(pw) pw.value = '';
+  }
+  function loadSession(){
+    try{
+      var raw = localStorage.getItem(LOGIN_KEY);
+      if(raw){
+        var s = JSON.parse(raw);
+        if(s && s.role && s.id){ session = s; return true; }
+      }
+    }catch(e){}
+    return false;
+  }
+  function saveSession(){
+    try{ localStorage.setItem(LOGIN_KEY, JSON.stringify(session)); }catch(e){}
+  }
+  function wireLogin(){
+    var btn = document.getElementById('btn-login');
+    if(btn) btn.addEventListener('click', function(){
+      var role = document.getElementById('login-role').value;
+      var id = document.getElementById('login-id').value.trim();
+      var pw = document.getElementById('login-password').value;
+      var match = TEAM_ROSTER.filter(function(m){ return m.role === role && m.id === id && m.password === pw; })[0];
+      var err = document.getElementById('login-error');
+      if(!match){
+        if(err){ err.textContent = '专业 / 工号 / 密码不匹配，请核对后重试（账号在页面配置里维护，忘记的话找维护这个工具的同事看一眼源码）。'; err.style.display = ''; }
+        return;
+      }
+      session = { id: match.id, name: match.name, role: match.role };
+      saveSession();
+      showApp();
+    });
+    var pwInput = document.getElementById('login-password');
+    if(pwInput) pwInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') btn.click(); });
+    var logoutBtn = document.getElementById('btn-logout');
+    if(logoutBtn) logoutBtn.addEventListener('click', function(){
+      session = { id:'', name:'', role:'' };
+      try{ localStorage.removeItem(LOGIN_KEY); }catch(e){}
+      showLogin();
+    });
+  }
+
+  wireLogin();
+  if(loadSession()){ showApp(); } else { showLogin(); }
+  cloudInit();
 })();
 </script>
 </body>
