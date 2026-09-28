@@ -299,9 +299,10 @@
     border-radius:50%; background:var(--accent-ink); transform:rotate(45deg);
   }
   .pdf-pin-pending{
-    display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:8px;
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 12px; border-radius:8px;
     background:var(--accent-soft); color:var(--accent-strong); font-size:12.5px; margin-top:10px;
   }
+  .pdf-pin-pending #btn-goto-return-form{margin-left:auto; white-space:nowrap;}
   .pdf-inbox-group{margin-bottom:12px;}
   .pdf-inbox-group h3{margin:0 0 8px; font-size:13px; color:var(--ink-soft);}
   .pdf-inbox-item{
@@ -451,7 +452,8 @@
           <canvas id="pdf-canvas"></canvas>
         </div>
         <div id="pdf-pin-pending-hint" class="pdf-pin-pending" style="display:none;">
-          已选中图纸上一个位置 — 在下方表单填写内容后点击"提交"即可关联；再点一次图纸可以改选位置。
+          <span>已选中图纸上一个位置 — 点右边按钮去"返回条件跟踪"填写内容并提交即可关联；再点一次图纸可以改选位置。</span>
+          <button class="btn" id="btn-goto-return-form">去登记返回条件 →</button>
         </div>
         <p class="muted" style="margin-top:8px; font-size:12px;">点击图纸任意位置标记本次返回条件对应的图上坐标；已提交并关联的标注会显示为图钉，绿色表示已处理。</p>
         <details class="spec" style="margin-top:10px;">
@@ -586,6 +588,9 @@
     <div class="card">
       <h2>登记新的返回条件</h2>
       <p class="desc">和应力专业约定的结构化返回模板：支架位号 / 位置 / 类型 / 载荷 X、Y、Z / 调整建议 / 版次，替代散落在邮件、PDF 手标里的意见，避免版次一多就遗漏。</p>
+      <div id="return-pin-hint" class="pdf-pin-pending" style="display:none; margin-bottom:12px;">
+        这条返回条件会关联到你刚才在"图纸收发"里选中的图上位置，提交后可以回去看到图钉标记。
+      </div>
       <div class="return-form">
         <select id="return-node" class="search" title="节点号（位置将自动取自模型坐标）"></select>
         <input type="text" id="return-support" class="search" placeholder="支架位号（如 G1A）" style="width:150px;">
@@ -1238,6 +1243,16 @@
     el.style.color = kind === 'err' ? 'var(--bad)' : (kind === 'ok' ? 'var(--good)' : '');
   }
 
+  /* 待提交的图纸标注：图纸收发页和返回条件跟踪页各有一个提示条，两边一起同步显示/隐藏，
+     因为这两个功能现在拆到了两个不同的 Tab 里。 */
+  function syncPinPendingUI(){
+    var show = !!pdfState.pendingPin;
+    var hint1 = document.getElementById('pdf-pin-pending-hint');
+    var hint2 = document.getElementById('return-pin-hint');
+    if(hint1) hint1.style.display = show ? '' : 'none';
+    if(hint2) hint2.style.display = show ? '' : 'none';
+  }
+
   function updatePdfCloudHint(){
     var el = document.getElementById('pdf-cloud-hint');
     if(!el) return;
@@ -1313,8 +1328,7 @@
     pdfState.name = displayName;
     pdfState.version = versionTime || '';
     pdfState.pendingPin = null;
-    var hint = document.getElementById('pdf-pin-pending-hint');
-    if(hint) hint.style.display = 'none';
+    syncPinPendingUI();
     window.pdfjsLib.getDocument({ data: typedArray }).promise.then(function(pdf){
       pdfState.doc = pdf;
       return pdf.getPage(1);
@@ -1440,6 +1454,16 @@
       var area = document.getElementById('pdf-viewer-area');
       if(area) area.scrollIntoView({ behavior:'smooth', block:'start' });
     });
+    var gotoBtn = document.getElementById('btn-goto-return-form');
+    if(gotoBtn) gotoBtn.addEventListener('click', function(){
+      var returnsTab = document.getElementById('tabbtn-returns');
+      if(returnsTab) returnsTab.click();
+      var contentInput = document.getElementById('return-content');
+      if(contentInput){
+        contentInput.focus();
+        contentInput.scrollIntoView({ behavior:'smooth', block:'center' });
+      }
+    });
   }
 
   function wirePdfCanvasClick(){
@@ -1450,8 +1474,7 @@
       var x = (e.clientX - rect.left) / rect.width;
       var y = (e.clientY - rect.top) / rect.height;
       pdfState.pendingPin = { x: x, y: y };
-      var hint = document.getElementById('pdf-pin-pending-hint');
-      if(hint) hint.style.display = '';
+      syncPinPendingUI();
       renderPdfPins();
     });
   }
@@ -1560,6 +1583,7 @@
     renderMeta(); renderAnnot(); renderDiff(); renderSchematic();
     populateReturnTypeOptions(); populateReturnNodeOptions(); renderReturns(); renderStats();
     renderDrawingSelect(); renderDrawingVersionList(); renderPdfPins(); renderPdfInbox();
+  syncPinPendingUI();
   }
 
   /* ---------------- 左侧导航 ---------------- */
@@ -1631,8 +1655,7 @@
     var area = document.getElementById('pdf-viewer-area');
     if(area) area.style.display = 'none';
     pdfState.name = ''; pdfState.version = ''; pdfState.pendingPin = null;
-    var hint = document.getElementById('pdf-pin-pending-hint');
-    if(hint) hint.style.display = 'none';
+    syncPinPendingUI();
   }
   document.getElementById('line-select').addEventListener('change', function(e){
     state.currentLineId = e.target.value;
@@ -1798,8 +1821,7 @@
     c.returns.push(rec);
     contentInput.value = ''; supportInput.value = ''; lxInput.value = ''; lyInput.value = ''; lzInput.value = '';
     pdfState.pendingPin = null;
-    var hint = document.getElementById('pdf-pin-pending-hint');
-    if(hint) hint.style.display = 'none';
+    syncPinPendingUI();
     renderReturns();
     renderPdfPins();
     cloudPush();
