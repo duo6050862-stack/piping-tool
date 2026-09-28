@@ -298,6 +298,23 @@
     content:''; position:absolute; left:50%; top:50%; width:6px; height:6px; margin:-3px 0 0 -3px;
     border-radius:50%; background:var(--accent-ink); transform:rotate(45deg);
   }
+  .pdf-pin-label{
+    position:absolute; max-width:170px; padding:2px 8px; border-radius:6px;
+    background:var(--surface); border:1px solid var(--accent); color:var(--accent-strong);
+    font-size:11px; line-height:1.5; box-shadow:var(--shadow-sm); white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; pointer-events:none; z-index:2;
+  }
+  .pdf-pin-label.done{border-color:var(--good); color:var(--good);}
+  .pdf-quick-annot{
+    position:absolute; z-index:6; width:220px; background:var(--surface); border:1px solid var(--accent);
+    border-radius:10px; box-shadow:var(--shadow-sm); padding:8px;
+  }
+  .pdf-quick-annot textarea{
+    width:100%; box-sizing:border-box; resize:vertical; min-height:44px; border:1px solid var(--border);
+    border-radius:6px; padding:6px 8px; font-size:12.5px; font-family:inherit; color:var(--ink); background:var(--surface);
+  }
+  .pdf-quick-annot-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:6px;}
+  .pdf-quick-annot-actions .btn{padding:4px 10px; font-size:12px;}
   .pdf-pin-pending{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 12px; border-radius:8px;
     background:var(--accent-soft); color:var(--accent-strong); font-size:12.5px; margin-top:10px;
@@ -450,12 +467,19 @@
       <div id="pdf-viewer-area" style="display:none; margin-top:12px;">
         <div id="pdf-viewer-wrap">
           <canvas id="pdf-canvas"></canvas>
+          <div id="pdf-quick-annot" class="pdf-quick-annot" style="display:none;">
+            <textarea id="pdf-quick-annot-input" rows="2" placeholder="输入标注文字，回车提交…"></textarea>
+            <div class="pdf-quick-annot-actions">
+              <button class="btn" id="pdf-quick-annot-cancel">取消</button>
+              <button class="btn primary" id="pdf-quick-annot-submit">提交</button>
+            </div>
+          </div>
         </div>
         <div id="pdf-pin-pending-hint" class="pdf-pin-pending" style="display:none;">
-          <span>已选中图纸上一个位置 — 点右边按钮去"返回条件跟踪"填写内容并提交即可关联；再点一次图纸可以改选位置。</span>
+          <span>已选中图纸上一个位置 — 可以直接在图上弹出的输入框里打字提交（推荐，节点/发起方等先用默认值）；如果一开始就要填类型、发起方、载荷等完整信息，点右边按钮去"返回条件跟踪"里填写。再点一次图纸可以改选位置。</span>
           <button class="btn" id="btn-goto-return-form">去登记返回条件 →</button>
         </div>
-        <p class="muted" style="margin-top:8px; font-size:12px;">点击图纸任意位置标记本次返回条件对应的图上坐标；已提交并关联的标注会显示为图钉，绿色表示已处理。</p>
+        <p class="muted" style="margin-top:8px; font-size:12px;">点击图纸任意位置即可弹出输入框直接标注文字；标注会以文字气泡+图钉显示在图上，绿色表示已处理。</p>
         <details class="spec" style="margin-top:10px;">
           <summary>图纸文字内容（自动抠取，供核对用）</summary>
           <p class="muted" style="font-size:12px; margin:8px 0;">直接从 PDF 的文字图层中提取，仅是文字抠取，不是识图/坐标解析；扫描件或纯图片型 PDF 提取不到内容。</p>
@@ -589,7 +613,7 @@
       <h2>登记新的返回条件</h2>
       <p class="desc">和应力专业约定的结构化返回模板：支架位号 / 位置 / 类型 / 载荷 X、Y、Z / 调整建议 / 版次，替代散落在邮件、PDF 手标里的意见，避免版次一多就遗漏。</p>
       <div id="return-pin-hint" class="pdf-pin-pending" style="display:none; margin-bottom:12px;">
-        这条返回条件会关联到你刚才在"图纸收发"里选中的图上位置，提交后可以回去看到图钉标记。
+        这条返回条件会关联到你刚才在"图纸收发"里选中的图上位置（其实也可以直接在图上弹出的输入框里打字，不用特地跑来这里）。提交后回图纸页可以看到文字和图钉标记。
       </div>
       <div class="return-form">
         <select id="return-node" class="search" title="节点号（位置将自动取自模型坐标）"></select>
@@ -611,6 +635,7 @@
       </div>
       <div class="return-form" style="margin-top:10px;">
         <input type="text" id="return-content" class="search" placeholder="调整建议 / 处理意见…" style="flex:2; min-width:220px;">
+        <button class="btn" id="btn-cancel-edit-return" style="display:none;">取消编辑</button>
         <button class="btn primary" id="btn-add-return">提交</button>
       </div>
     </div>
@@ -1185,6 +1210,7 @@
           if(!state.lines.some(function(l){ return l.id === state.currentLineId; })){
             state.currentLineId = state.lines[0].id;
           }
+          endEditReturn();
         }
         renderAll();
         setCollabStatus('已连接 · 最近同步 '+nowTimeStr()+(row.updated_by?('（'+esc(row.updated_by)+' 更新）'):''), 'ok');
@@ -1235,6 +1261,7 @@
 
   /* ---------------- PDF 图纸标注 + 图纸库（可选功能） ---------------- */
   var pdfState = { name: '', version: '', doc: null, scale: 1, pendingPin: null };
+  var editingReturnId = null;
 
   function setPdfStatus(text, kind){
     var el = document.getElementById('pdf-status');
@@ -1251,6 +1278,90 @@
     var hint2 = document.getElementById('return-pin-hint');
     if(hint1) hint1.style.display = show ? '' : 'none';
     if(hint2) hint2.style.display = show ? '' : 'none';
+  }
+
+  /* 就地标注输入框：点选图纸位置后直接弹出，输入文字回车/点提交即可，
+     不强制要求先去"返回条件跟踪"页面填完整表单。 */
+  function hideQuickAnnotPopup(){
+    var pop = document.getElementById('pdf-quick-annot');
+    if(pop) pop.style.display = 'none';
+  }
+
+  function openQuickAnnotPopup(xFrac, yFrac, canvas){
+    pdfState.pendingPin = { x: xFrac, y: yFrac };
+    syncPinPendingUI();
+    renderPdfPins();
+    var pop = document.getElementById('pdf-quick-annot');
+    var input = document.getElementById('pdf-quick-annot-input');
+    if(!pop || !input || !canvas) return;
+    var popW = 220;
+    var left = Math.min(xFrac * canvas.clientWidth + 10, Math.max(0, canvas.clientWidth - popW - 4));
+    var top = Math.min(yFrac * canvas.clientHeight + 14, Math.max(0, canvas.clientHeight - 90));
+    pop.style.left = left + 'px';
+    pop.style.top = top + 'px';
+    pop.style.display = '';
+    input.value = '';
+    input.focus();
+  }
+
+  function truncateLabel(s){
+    s = String(s || '').trim();
+    if(!s) return '';
+    return s.length > 12 ? s.slice(0, 12) + '…' : s;
+  }
+
+  function submitQuickAnnot(){
+    var input = document.getElementById('pdf-quick-annot-input');
+    var text = input ? input.value.trim() : '';
+    if(!text){ if(input) input.focus(); return; }
+    if(!pdfState.pendingPin){ hideQuickAnnotPopup(); return; }
+    var c = cur();
+    var nodeSel = document.getElementById('return-node');
+    var typeSel = document.getElementById('return-type');
+    var defaultNode = (nodeSel && nodeSel.options.length) ? Number(nodeSel.options[0].value) : 0;
+    var defaultFrom = ['应力专业','配管专业','项目管理'].indexOf(session.role) >= 0 ? session.role : '应力专业';
+    var defaultType = (typeSel && typeSel.options.length) ? typeSel.options[0].value : '';
+    var rec = {
+      id: c.nextReturnId++, node: defaultNode, from: defaultFrom,
+      supportTag: '', type: defaultType,
+      loadX: 0, loadY: 0, loadZ: 0,
+      rev: 'Rev.' + (c.returns.length + 1),
+      content: text, status: '待处理', date: todayStr(),
+      pdfName: pdfState.name, pdfVersion: pdfState.version,
+      pdfX: pdfState.pendingPin.x, pdfY: pdfState.pendingPin.y
+    };
+    c.returns.push(rec);
+    pdfState.pendingPin = null;
+    hideQuickAnnotPopup();
+    syncPinPendingUI();
+    renderReturns();
+    renderPdfPins();
+    cloudPush();
+    setPdfStatus('已在图上添加标注。节点号/发起方等暂时用的是默认值，如需精确填写可以去"返回条件跟踪"里点这条记录的"编辑"。', 'ok');
+  }
+
+  function wireQuickAnnotUI(){
+    var submitBtn = document.getElementById('pdf-quick-annot-submit');
+    var cancelBtn = document.getElementById('pdf-quick-annot-cancel');
+    var input = document.getElementById('pdf-quick-annot-input');
+    if(submitBtn) submitBtn.addEventListener('click', submitQuickAnnot);
+    if(cancelBtn) cancelBtn.addEventListener('click', function(){
+      hideQuickAnnotPopup();
+      pdfState.pendingPin = null;
+      syncPinPendingUI();
+      renderPdfPins();
+    });
+    if(input) input.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' && !e.shiftKey){
+        e.preventDefault();
+        submitQuickAnnot();
+      } else if(e.key === 'Escape'){
+        hideQuickAnnotPopup();
+        pdfState.pendingPin = null;
+        syncPinPendingUI();
+        renderPdfPins();
+      }
+    });
   }
 
   function updatePdfCloudHint(){
@@ -1329,6 +1440,7 @@
     pdfState.version = versionTime || '';
     pdfState.pendingPin = null;
     syncPinPendingUI();
+    hideQuickAnnotPopup();
     window.pdfjsLib.getDocument({ data: typedArray }).promise.then(function(pdf){
       pdfState.doc = pdf;
       return pdf.getPage(1);
@@ -1476,6 +1588,7 @@
     });
     var gotoBtn = document.getElementById('btn-goto-return-form');
     if(gotoBtn) gotoBtn.addEventListener('click', function(){
+      hideQuickAnnotPopup();
       var returnsTab = document.getElementById('tabbtn-returns');
       if(returnsTab) returnsTab.click();
       var contentInput = document.getElementById('return-content');
@@ -1493,9 +1606,7 @@
       var rect = canvas.getBoundingClientRect();
       var x = (e.clientX - rect.left) / rect.width;
       var y = (e.clientY - rect.top) / rect.height;
-      pdfState.pendingPin = { x: x, y: y };
-      syncPinPendingUI();
-      renderPdfPins();
+      openQuickAnnotPopup(x, y, canvas);
     });
   }
 
@@ -1503,26 +1614,71 @@
     var area = document.getElementById('pdf-viewer-area');
     var wrap = document.getElementById('pdf-viewer-wrap');
     if(!wrap || !area || area.style.display === 'none') return;
-    var old = wrap.querySelectorAll('.pdf-pin');
+    var old = wrap.querySelectorAll('.pdf-pin, .pdf-pin-label');
     old.forEach(function(p){ p.remove(); });
     var canvas = document.getElementById('pdf-canvas');
     if(!canvas || !canvas.width) return;
-    function addPin(xFrac, yFrac, cls, title){
+    function addPin(xFrac, yFrac, cls, title, labelText){
       var pin = document.createElement('div');
       pin.className = 'pdf-pin' + (cls ? (' '+cls) : '');
       pin.style.left = (xFrac * canvas.clientWidth) + 'px';
       pin.style.top = (yFrac * canvas.clientHeight) + 'px';
       if(title) pin.title = title;
       wrap.appendChild(pin);
+      if(labelText){
+        var label = document.createElement('div');
+        label.className = 'pdf-pin-label' + (cls === 'done' ? ' done' : '');
+        label.textContent = labelText;
+        if(title) label.title = title;
+        label.style.left = (xFrac * canvas.clientWidth + 12) + 'px';
+        label.style.top = (yFrac * canvas.clientHeight - 26) + 'px';
+        wrap.appendChild(label);
+      }
     }
     cur().returns.forEach(function(r){
       if(r.pdfName === pdfState.name && r.pdfVersion === pdfState.version && r.pdfX != null && r.pdfY != null){
-        addPin(r.pdfX, r.pdfY, r.status === '已处理' ? 'done' : '', '节点 '+r.node+'：'+(r.content||''));
+        addPin(r.pdfX, r.pdfY, r.status === '已处理' ? 'done' : '', '节点 '+r.node+'：'+(r.content||''), truncateLabel(r.content));
       }
     });
     if(pdfState.pendingPin){
       addPin(pdfState.pendingPin.x, pdfState.pendingPin.y, '', '待提交的新标注');
     }
+  }
+
+  function endEditReturn(){
+    editingReturnId = null;
+    var btn = document.getElementById('btn-add-return');
+    if(btn) btn.textContent = '提交';
+    var cancelBtn = document.getElementById('btn-cancel-edit-return');
+    if(cancelBtn) cancelBtn.style.display = 'none';
+  }
+
+  function startEditReturn(id){
+    var c = cur();
+    var rec = c.returns.filter(function(r){ return r.id === id; })[0];
+    if(!rec) return;
+    editingReturnId = id;
+    var nodeSel = document.getElementById('return-node');
+    if(nodeSel) nodeSel.value = rec.node;
+    var supportInput = document.getElementById('return-support');
+    if(supportInput) supportInput.value = rec.supportTag || '';
+    var typeSel = document.getElementById('return-type');
+    if(typeSel) typeSel.value = rec.type || '';
+    var fromSel = document.getElementById('return-from');
+    if(fromSel) fromSel.value = rec.from || '';
+    var lx = document.getElementById('return-load-x'); if(lx) lx.value = rec.loadX || '';
+    var ly = document.getElementById('return-load-y'); if(ly) ly.value = rec.loadY || '';
+    var lz = document.getElementById('return-load-z'); if(lz) lz.value = rec.loadZ || '';
+    var rev = document.getElementById('return-rev'); if(rev) rev.value = rec.rev || '';
+    var contentInput = document.getElementById('return-content');
+    if(contentInput) contentInput.value = rec.content || '';
+    var btn = document.getElementById('btn-add-return');
+    if(btn) btn.textContent = '更新这条记录';
+    var cancelBtn = document.getElementById('btn-cancel-edit-return');
+    if(cancelBtn) cancelBtn.style.display = '';
+    var formCard = document.querySelector('#panel-returns .card');
+    if(formCard) formCard.scrollIntoView({ behavior:'smooth', block:'start' });
+    if(contentInput) contentInput.focus();
   }
 
   function renderReturns(){
@@ -1552,6 +1708,7 @@
         '</div>' +
         '<div class="return-bottom">' +
           '<span class="status-pill '+statusCls+'"><span class="dot"></span>'+r.status+'</span>' +
+          '<button class="btn" data-edit-return="'+r.id+'">编辑</button>' +
           '<button class="btn" data-toggle-return="'+r.id+'">'+nextLabel+'</button>' +
         '</div>' +
       '</div>';
@@ -1676,10 +1833,12 @@
     if(area) area.style.display = 'none';
     pdfState.name = ''; pdfState.version = ''; pdfState.pendingPin = null;
     syncPinPendingUI();
+    hideQuickAnnotPopup();
   }
   document.getElementById('line-select').addEventListener('change', function(e){
     state.currentLineId = e.target.value;
     resetPdfViewer();
+    endEditReturn();
     applySessionToForm();
     renderAll();
   });
@@ -1690,6 +1849,7 @@
     state.lines.push(line);
     state.currentLineId = line.id;
     resetPdfViewer();
+    endEditReturn();
     renderAll();
     cloudPush();
   });
@@ -1709,6 +1869,7 @@
     state.lines = state.lines.filter(function(l){ return l.id !== c.id; });
     state.currentLineId = state.lines[0].id;
     resetPdfViewer();
+    endEditReturn();
     renderAll();
     cloudPush();
   });
@@ -1828,30 +1989,58 @@
     var content = contentInput.value.trim();
     if(!content){ contentInput.focus(); return; }
     var c = cur();
-    var rec = {
-      id: c.nextReturnId++, node: Number(nodeSel.value), from: fromSel.value,
-      supportTag: supportInput.value.trim(), type: typeSel.value,
-      loadX: Number(lxInput.value||0), loadY: Number(lyInput.value||0), loadZ: Number(lzInput.value||0),
-      rev: revInput.value.trim() || 'Rev.'+(c.returns.length+1),
-      content: content, status: '待处理', date: todayStr()
-    };
-    if(pdfState.pendingPin){
-      rec.pdfName = pdfState.name; rec.pdfX = pdfState.pendingPin.x; rec.pdfY = pdfState.pendingPin.y; rec.pdfVersion = pdfState.version;
+    if(editingReturnId != null){
+      var rec = c.returns.filter(function(r){ return r.id === editingReturnId; })[0];
+      if(rec){
+        rec.node = Number(nodeSel.value); rec.from = fromSel.value;
+        rec.supportTag = supportInput.value.trim(); rec.type = typeSel.value;
+        rec.loadX = Number(lxInput.value||0); rec.loadY = Number(lyInput.value||0); rec.loadZ = Number(lzInput.value||0);
+        rec.rev = revInput.value.trim() || rec.rev;
+        rec.content = content;
+      }
+      endEditReturn();
+    } else {
+      var newRec = {
+        id: c.nextReturnId++, node: Number(nodeSel.value), from: fromSel.value,
+        supportTag: supportInput.value.trim(), type: typeSel.value,
+        loadX: Number(lxInput.value||0), loadY: Number(lyInput.value||0), loadZ: Number(lzInput.value||0),
+        rev: revInput.value.trim() || 'Rev.'+(c.returns.length+1),
+        content: content, status: '待处理', date: todayStr()
+      };
+      if(pdfState.pendingPin){
+        newRec.pdfName = pdfState.name; newRec.pdfX = pdfState.pendingPin.x; newRec.pdfY = pdfState.pendingPin.y; newRec.pdfVersion = pdfState.version;
+      }
+      c.returns.push(newRec);
     }
-    c.returns.push(rec);
     contentInput.value = ''; supportInput.value = ''; lxInput.value = ''; lyInput.value = ''; lzInput.value = '';
     pdfState.pendingPin = null;
     syncPinPendingUI();
+    hideQuickAnnotPopup();
     renderReturns();
     renderPdfPins();
     cloudPush();
   });
+  var btnCancelEditReturn = document.getElementById('btn-cancel-edit-return');
+  if(btnCancelEditReturn) btnCancelEditReturn.addEventListener('click', function(){
+    endEditReturn();
+    var contentInput = document.getElementById('return-content'); if(contentInput) contentInput.value = '';
+    var supportInput = document.getElementById('return-support'); if(supportInput) supportInput.value = '';
+    var lx = document.getElementById('return-load-x'); if(lx) lx.value = '';
+    var ly = document.getElementById('return-load-y'); if(ly) ly.value = '';
+    var lz = document.getElementById('return-load-z'); if(lz) lz.value = '';
+  });
   document.getElementById('return-list').addEventListener('click', function(e){
-    var btn = e.target.closest('[data-toggle-return]');
-    if(!btn) return;
-    var id = Number(btn.getAttribute('data-toggle-return'));
-    var item = cur().returns.filter(function(r){ return r.id === id; })[0];
-    if(item){ item.status = item.status === '已处理' ? '待处理' : '已处理'; renderReturns(); cloudPush(); }
+    var toggleBtn = e.target.closest('[data-toggle-return]');
+    if(toggleBtn){
+      var id = Number(toggleBtn.getAttribute('data-toggle-return'));
+      var item = cur().returns.filter(function(r){ return r.id === id; })[0];
+      if(item){ item.status = item.status === '已处理' ? '待处理' : '已处理'; renderReturns(); cloudPush(); }
+      return;
+    }
+    var editBtn = e.target.closest('[data-edit-return]');
+    if(editBtn){
+      startEditReturn(Number(editBtn.getAttribute('data-edit-return')));
+    }
   });
 
   /* ---------------- support-modification export (模拟 E3D 导入数据) ---------------- */
@@ -1897,6 +2086,7 @@
 
   wireDrawingUI();
   wirePdfCanvasClick();
+  wireQuickAnnotUI();
   renderAll();
 
   /* ---------------- 登录 / 身份切换 ---------------- */
