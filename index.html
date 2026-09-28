@@ -442,9 +442,9 @@
           <option>项目管理</option>
         </select>
         <button class="btn primary" id="btn-pdf-upload">上传并发送</button>
-        <input type="file" id="pdf-file-input" accept="application/pdf,.pdf" style="display:none;">
+        <input type="file" id="pdf-file-input" accept="application/pdf,.pdf" multiple style="display:none;">
       </div>
-      <p class="muted" style="font-size:12px; margin-top:6px;">下拉框选一份已有图纸可以直接查看最新版本；"图纸名称"填新名字就是新建一份图纸，填已有名字则是给它加一个新版本并转交。</p>
+      <p class="muted" style="font-size:12px; margin-top:6px;">下拉框选一份已有图纸可以直接查看最新版本；"图纸名称"填新名字就是新建一份图纸，填已有名字则是给它加一个新版本并转交。点"上传并发送"时可以<b>一次选中多份 PDF</b>——多选时会自动用每份文件各自的文件名建图纸（上面的"图纸名称"栏对多选不生效），"发给…"的选择则对本次选中的所有图纸统一生效。</p>
       <div id="pdf-status" class="muted" style="margin-top:8px;"></div>
       <div id="pdf-version-list" class="muted" style="margin-top:4px; font-size:12px;"></div>
       <div id="pdf-viewer-area" style="display:none; margin-top:12px;">
@@ -1398,7 +1398,7 @@
     renderPdfInbox();
   }
 
-  function uploadDrawingFile(file, drawingName, sentTo){
+  function uploadDrawingFile(file, drawingName, sentTo, onRegistered){
     drawingName = (drawingName || '').trim() || file.name.replace(/\.pdf$/i, '');
     var reader = new FileReader();
     reader.onload = function(){
@@ -1411,6 +1411,7 @@
       };
       renderPdfFromArrayBuffer(bytes, drawingName, versionEntry.time);
       addDrawingVersion(drawingName, versionEntry);
+      if(onRegistered) onRegistered(drawingName, true);
       if(cloud.ready && cloud.app){
         setPdfStatus('正在上传到云端存储…');
         var cloudPath = 'drawings/' + Date.now() + '_' + file.name;
@@ -1427,6 +1428,10 @@
         setPdfStatus('已加载「'+drawingName+'」（未连接团队云端，仅本机可见，对方暂时收不到这份图纸）。', 'ok');
       }
     };
+    reader.onerror = function(){
+      if(onRegistered) onRegistered(drawingName, false);
+      setPdfStatus('读取「'+drawingName+'」失败，已跳过。', 'err');
+    };
     reader.readAsArrayBuffer(file);
   }
 
@@ -1442,7 +1447,22 @@
     });
     if(btn && input) btn.addEventListener('click', function(){ input.click(); });
     if(input) input.addEventListener('change', function(){
-      if(input.files && input.files[0]) uploadDrawingFile(input.files[0], nameInput ? nameInput.value : '', sendToSel ? sendToSel.value : '');
+      var files = input.files ? Array.prototype.slice.call(input.files) : [];
+      var sentTo = sendToSel ? sendToSel.value : '';
+      if(files.length === 1){
+        uploadDrawingFile(files[0], nameInput ? nameInput.value : '', sentTo);
+      } else if(files.length > 1){
+        var total = files.length, done = 0, ok = 0;
+        setPdfStatus('正在读取并逐份上传 '+total+' 份图纸，请稍候…');
+        files.forEach(function(f){
+          uploadDrawingFile(f, '', sentTo, function(name, success){
+            done++; if(success) ok++;
+            if(done === total){
+              setPdfStatus('已完成 '+total+' 份图纸的本地加载（成功 '+ok+' 份），已按各自文件名建图并'+(sentTo ? '发给'+sentTo : '仅留存')+'；云端上传仍在后台进行，稍后可在"图纸收发"列表和下面版本记录里逐一确认。', ok === total ? 'ok' : 'err');
+            }
+          });
+        });
+      }
       input.value = '';
     });
     if(inbox) inbox.addEventListener('click', function(e){
