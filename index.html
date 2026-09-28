@@ -51,7 +51,35 @@
     color:var(--ink); font-family:var(--font-sans); line-height:1.5;
     -webkit-font-smoothing:antialiased;
   }
-  .app{max-width:1100px; margin:0 auto; padding:20px 20px 56px;}
+  .shell{display:flex; align-items:flex-start; min-height:100vh;}
+  .sidebar{
+    width:230px; flex:none; align-self:flex-start; position:sticky; top:0; min-height:100vh;
+    background:var(--surface); border-right:1px solid var(--border); padding:22px 16px;
+  }
+  .sidebar-brand{margin-bottom:22px;}
+  .sidebar-brand .eyebrow{
+    font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent);
+    font-weight:600; margin:0 0 4px;
+  }
+  .sidebar-brand h1{margin:0; font-size:18px; font-weight:700; letter-spacing:-.01em; text-wrap:balance;}
+  .nav-group{margin-bottom:18px;}
+  .nav-group-title{
+    font-size:11px; font-weight:700; color:var(--ink-muted); text-transform:uppercase;
+    letter-spacing:.04em; margin:0 0 8px; padding:0 10px;
+  }
+  .main{flex:1; min-width:0; max-width:1100px; margin:0 auto; padding:20px 20px 56px;}
+  @media (max-width:820px){
+    .shell{flex-direction:column;}
+    .sidebar{
+      width:100%; min-height:auto; position:static; border-right:none; border-bottom:1px solid var(--border);
+      display:flex; flex-wrap:nowrap; overflow-x:auto; align-items:center; gap:14px;
+    }
+    .sidebar-brand{margin-bottom:0; white-space:nowrap;}
+    .sidebar-brand h1{font-size:15px;}
+    .nav-group{display:flex; gap:4px; margin-bottom:0; flex:none;}
+    .nav-group-title{display:none;}
+    .nav-btn{white-space:nowrap; width:auto;}
+  }
 
   /* ---------- header ---------- */
   .topbar{
@@ -72,20 +100,15 @@
   }
   .line-card b{color:var(--ink); font-weight:600;}
 
-  /* ---------- tabs ---------- */
-  .tabs{
-    display:flex; gap:4px; background:var(--surface); border:1px solid var(--border);
-    border-radius:11px; padding:4px; margin-bottom:16px; box-shadow:var(--shadow-sm);
-    overflow-x:auto;
+  /* ---------- sidebar nav ---------- */
+  .nav-btn{
+    display:block; width:100%; text-align:left; appearance:none; border:none; background:transparent;
+    color:var(--ink-soft); font:inherit; font-weight:600; font-size:13.5px; padding:9px 10px;
+    border-radius:8px; cursor:pointer; margin-bottom:2px; transition:background .15s,color .15s;
   }
-  .tab-btn{
-    appearance:none; border:none; background:transparent; color:var(--ink-soft);
-    font:inherit; font-weight:600; font-size:13.5px; padding:10px 16px; border-radius:8px;
-    cursor:pointer; white-space:nowrap; transition:background .15s,color .15s;
-  }
-  .tab-btn:hover{background:var(--surface-alt); color:var(--ink);}
-  .tab-btn[aria-selected="true"]{background:var(--accent); color:var(--accent-ink);}
-  .tab-btn:focus-visible, button:focus-visible, input:focus-visible, .dropzone:focus-visible{
+  .nav-btn:hover{background:var(--surface-alt); color:var(--ink);}
+  .nav-btn[aria-selected="true"]{background:var(--accent); color:var(--accent-ink);}
+  .nav-btn:focus-visible, button:focus-visible, input:focus-visible, .dropzone:focus-visible{
     outline:2px solid var(--accent); outline-offset:2px;
   }
 
@@ -279,6 +302,16 @@
     display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:8px;
     background:var(--accent-soft); color:var(--accent-strong); font-size:12.5px; margin-top:10px;
   }
+  .pdf-inbox-group{margin-bottom:12px;}
+  .pdf-inbox-group h3{margin:0 0 8px; font-size:13px; color:var(--ink-soft);}
+  .pdf-inbox-item{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:8px;
+  }
+  .pdf-inbox-item.waiting{background:var(--warn-soft); border-color:var(--warn);}
+  .pdf-inbox-item.sent{background:var(--surface-alt);}
+  .pdf-inbox-item b{font-size:13.5px;}
+  .pdf-inbox-item .btn{margin-left:auto;}
   /* ---------- login ---------- */
   .login-overlay{
     position:fixed; inset:0; background:var(--bg); z-index:100;
@@ -340,11 +373,33 @@
 </div>
 
 <div class="app" id="app-root" style="display:none;">
+<div class="shell">
+  <nav class="sidebar" role="tablist" aria-label="功能区">
+    <div class="sidebar-brand">
+      <p class="eyebrow">配管工程室</p>
+      <h1>配管应力协同台</h1>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-title">协同互动（配管 ↔ 应力）</div>
+      <button class="nav-btn active" id="tabbtn-drawings" role="tab" aria-selected="true" data-target="panel-drawings">① 图纸收发</button>
+      <button class="nav-btn" id="tabbtn-returns" role="tab" aria-selected="false" data-target="panel-returns">② 返回条件跟踪</button>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-title">变更可视化</div>
+      <button class="nav-btn" id="tabbtn-import" role="tab" aria-selected="false" data-target="panel-import">③ 数据导入</button>
+      <button class="nav-btn" id="tabbtn-annot" role="tab" aria-selected="false" data-target="panel-annot">④ 标注清单</button>
+      <button class="nav-btn" id="tabbtn-diff" role="tab" aria-selected="false" data-target="panel-diff">⑤ 版本对比</button>
+    </div>
+    <div class="nav-group">
+      <button class="nav-btn" id="tabbtn-stats" role="tab" aria-selected="false" data-target="panel-stats">⑥ 效果统计</button>
+    </div>
+  </nav>
+
+  <div class="main">
 
   <div class="topbar">
     <div>
       <p class="eyebrow">配管工程室 · AI 创新攻坚大赛原型</p>
-      <h1>配管应力协同台</h1>
       <p class="tagline">从配管三维模型导出的数据自动生成应力单线图标注清单，并在版次迭代时自动比对差异 —— 降低人工誊抄与人工比对带来的错漏。</p>
     </div>
     <div class="line-card">
@@ -368,16 +423,48 @@
     <button class="btn" id="btn-line-delete" style="color:var(--bad);">删除当前管线</button>
   </div>
 
-  <div class="tabs" role="tablist" aria-label="功能区">
-    <button class="tab-btn" id="tabbtn-import" role="tab" aria-selected="true" data-target="panel-import">① 数据导入</button>
-    <button class="tab-btn" id="tabbtn-annot" role="tab" aria-selected="false" data-target="panel-annot">② 标注清单</button>
-    <button class="tab-btn" id="tabbtn-diff" role="tab" aria-selected="false" data-target="panel-diff">③ 版本对比</button>
-    <button class="tab-btn" id="tabbtn-returns" role="tab" aria-selected="false" data-target="panel-returns">④ 返回条件跟踪</button>
-    <button class="tab-btn" id="tabbtn-stats" role="tab" aria-selected="false" data-target="panel-stats">⑤ 效果统计</button>
-  </div>
+  <!-- ================= PANEL 0: 图纸收发 ================= -->
+  <section class="panel active" id="panel-drawings">
+    <div class="card">
+      <h2>图纸收发</h2>
+      <p class="desc">配管专业上传管道等轴测图 PDF 时指定"发给应力专业"，应力专业登录后直接在下面"待你处理"里就能看到、打开、点选标注；标注/核实完，应力把新版本发回给配管，配管登录后同样会在自己的"待你处理"里看到——不需要再去找、去猜哪份是最新的。<span id="pdf-cloud-hint"></span></p>
 
-  <!-- ================= PANEL 1: 数据导入 ================= -->
-  <section class="panel active" id="panel-import">
+      <div id="pdf-inbox"></div>
+
+      <div class="return-form" style="margin-top:14px;">
+        <select id="pdf-drawing-select" class="search" style="min-width:200px;"><option value="">— 新图纸 / 选择已有图纸 —</option></select>
+        <input type="text" id="pdf-drawing-name" class="search" placeholder="图纸名称/图号（如 8&quot;-P-10234-A3A 轴测图）" style="flex:1; min-width:220px;">
+        <select id="pdf-send-to" class="search">
+          <option value="">发给…（可不选，仅留存）</option>
+          <option>配管专业</option>
+          <option>应力专业</option>
+          <option>项目管理</option>
+        </select>
+        <button class="btn primary" id="btn-pdf-upload">上传并发送</button>
+        <input type="file" id="pdf-file-input" accept="application/pdf,.pdf" style="display:none;">
+      </div>
+      <p class="muted" style="font-size:12px; margin-top:6px;">下拉框选一份已有图纸可以直接查看最新版本；"图纸名称"填新名字就是新建一份图纸，填已有名字则是给它加一个新版本并转交。</p>
+      <div id="pdf-status" class="muted" style="margin-top:8px;"></div>
+      <div id="pdf-version-list" class="muted" style="margin-top:4px; font-size:12px;"></div>
+      <div id="pdf-viewer-area" style="display:none; margin-top:12px;">
+        <div id="pdf-viewer-wrap">
+          <canvas id="pdf-canvas"></canvas>
+        </div>
+        <div id="pdf-pin-pending-hint" class="pdf-pin-pending" style="display:none;">
+          已选中图纸上一个位置 — 在下方表单填写内容后点击"提交"即可关联；再点一次图纸可以改选位置。
+        </div>
+        <p class="muted" style="margin-top:8px; font-size:12px;">点击图纸任意位置标记本次返回条件对应的图上坐标；已提交并关联的标注会显示为图钉，绿色表示已处理。</p>
+        <details class="spec" style="margin-top:10px;">
+          <summary>图纸文字内容（自动抠取，供核对用）</summary>
+          <p class="muted" style="font-size:12px; margin:8px 0;">直接从 PDF 的文字图层中提取，仅是文字抠取，不是识图/坐标解析；扫描件或纯图片型 PDF 提取不到内容。</p>
+          <pre id="pdf-text-content" style="white-space:pre-wrap; font-size:11.5px; max-height:180px; overflow:auto; margin:0; font-family:var(--font-mono); color:var(--ink-soft);"></pre>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PANEL 3: 数据导入 ================= -->
+  <section class="panel" id="panel-import">
     <div class="card">
       <h2>导入两个版次的模型导出数据</h2>
       <p class="desc">正式方案中，这里读取的是配管三维软件（SP3D / PDMS / E3D）导出的 PCF（Piping Component File，ISOGEN 中性格式）数据，或经解析后的结构化数据。当前原型已支持<b>直接上传 PCF 文件</b>（自动解析为节点数据），也接受同等结构的 CSV 文件，或先用示例数据体验完整流程。</p>
@@ -433,7 +520,7 @@
     </div>
   </section>
 
-  <!-- ================= PANEL 2: 标注清单 ================= -->
+  <!-- ================= PANEL 4: 标注清单 ================= -->
   <section class="panel" id="panel-annot">
     <div class="card">
       <h2>自动生成的标注清单</h2>
@@ -460,7 +547,7 @@
     </div>
   </section>
 
-  <!-- ================= PANEL 3: 版本对比 ================= -->
+  <!-- ================= PANEL 5: 版本对比 ================= -->
   <section class="panel" id="panel-diff">
     <div class="card">
       <h2>版次变更自动比对</h2>
@@ -494,36 +581,8 @@
     </div>
   </section>
 
-  <!-- ================= PANEL 4: 返回条件跟踪 ================= -->
+  <!-- ================= PANEL 2: 返回条件跟踪 ================= -->
   <section class="panel" id="panel-returns">
-    <div class="card">
-      <h2>图纸标注（可选）</h2>
-      <p class="desc">配管专业上传管道等轴测图 PDF；应力专业登录后即可直接查看、点选标注并登记结构化返回条件；谁都可以把修改/核实后的图纸再上传一版，供其他专业查看最新版本。<span id="pdf-cloud-hint"></span></p>
-      <div class="return-form">
-        <select id="pdf-drawing-select" class="search" style="min-width:200px;"><option value="">— 选择已上传的图纸 —</option></select>
-        <input type="text" id="pdf-drawing-name" class="search" placeholder="图纸名称/图号（如 8&quot;-P-10234-A3A 轴测图）" style="flex:1; min-width:220px;">
-        <button class="btn primary" id="btn-pdf-upload">上传 PDF</button>
-        <input type="file" id="pdf-file-input" accept="application/pdf,.pdf" style="display:none;">
-      </div>
-      <p class="muted" style="font-size:12px; margin-top:6px;">从下拉框选一份已有图纸可直接查看最新版本；如果"图纸名称"里填的是新名字，上传后会作为一份新图纸，填已有名字则作为该图纸的新版本。</p>
-      <div id="pdf-status" class="muted" style="margin-top:8px;"></div>
-      <div id="pdf-version-list" class="muted" style="margin-top:4px; font-size:12px;"></div>
-      <div id="pdf-viewer-area" style="display:none; margin-top:12px;">
-        <div id="pdf-viewer-wrap">
-          <canvas id="pdf-canvas"></canvas>
-        </div>
-        <div id="pdf-pin-pending-hint" class="pdf-pin-pending" style="display:none;">
-          已选中图纸上一个位置 — 在下方表单填写内容后点击"提交"即可关联；再点一次图纸可以改选位置。
-        </div>
-        <p class="muted" style="margin-top:8px; font-size:12px;">点击图纸任意位置标记本次返回条件对应的图上坐标；已提交并关联的标注会显示为图钉，绿色表示已处理。</p>
-        <details class="spec" style="margin-top:10px;">
-          <summary>图纸文字内容（自动抠取，供核对用）</summary>
-          <p class="muted" style="font-size:12px; margin:8px 0;">直接从 PDF 的文字图层中提取，仅是文字抠取，不是识图/坐标解析；扫描件或纯图片型 PDF 提取不到内容。</p>
-          <pre id="pdf-text-content" style="white-space:pre-wrap; font-size:11.5px; max-height:180px; overflow:auto; margin:0; font-family:var(--font-mono); color:var(--ink-soft);"></pre>
-        </details>
-      </div>
-    </div>
-
     <div class="card">
       <h2>登记新的返回条件</h2>
       <p class="desc">和应力专业约定的结构化返回模板：支架位号 / 位置 / 类型 / 载荷 X、Y、Z / 调整建议 / 版次，替代散落在邮件、PDF 手标里的意见，避免版次一多就遗漏。</p>
@@ -568,7 +627,7 @@
     </div>
   </section>
 
-  <!-- ================= PANEL 5: 效果统计 ================= -->
+  <!-- ================= PANEL 6: 效果统计 ================= -->
   <section class="panel" id="panel-stats">
     <div class="card">
       <h2 style="display:flex;align-items:center;gap:8px;">效果统计 <span class="badge-demo" id="stats-line-badge">示例数据</span></h2>
@@ -644,6 +703,9 @@
     <span>原型演示 · 配管与应力协同攻坚赛小组 · 本地离线版</span>
     <span>数据仅用于演示流程，非真实工程数据</span>
   </footer>
+
+  </div>
+</div>
 </div>
 
 <!-- 团队协作用（可选）：腾讯云开发 CloudBase Web SDK。未配置环境ID时不影响本机离线使用。 -->
@@ -1201,8 +1263,46 @@
     var d = findDrawing(cur().currentDrawing);
     if(!d || !d.versions.length){ el.textContent = ''; return; }
     el.innerHTML = '版本记录：' + d.versions.map(function(v, i){
-      return (i+1)+'. '+esc(v.time)+' · '+esc(v.uploadedBy||'')+(v.fileID ? '（已同步）' : '（仅本机，未同步）');
+      return (i+1)+'. '+esc(v.time)+' · '+esc(v.uploadedBy||'')+(v.sentTo ? '　→ 发给 '+esc(v.sentTo) : '')+(v.fileID ? '（已同步）' : '（仅本机，未同步）');
     }).join('　');
+  }
+
+  function renderPdfInbox(){
+    var el = document.getElementById('pdf-inbox');
+    if(!el) return;
+    var drawings = cur().drawings;
+    var waitingForMe = [], sentByMeWaiting = [];
+    drawings.forEach(function(d){
+      if(!d.versions.length) return;
+      var v = d.versions[d.versions.length - 1];
+      if(session.role && v.sentTo === session.role){
+        waitingForMe.push({ d: d, v: v });
+      } else if(session.role && v.uploaderRole === session.role && v.sentTo && v.sentTo !== session.role){
+        sentByMeWaiting.push({ d: d, v: v });
+      }
+    });
+    function itemHtml(item, cls, tag){
+      var d = item.d, v = item.v;
+      return '<div class="pdf-inbox-item '+cls+'">' +
+        '<span class="chip-tag '+(cls==='waiting'?'from-stress':'from-piping')+'">'+tag+'</span>' +
+        '<b>'+esc(d.name)+'</b>' +
+        '<span class="muted">'+esc(v.uploadedBy||'')+' 于 '+esc(v.time)+' 上传'+(v.sentTo?'　→ 发给 '+esc(v.sentTo):'')+'</span>' +
+        '<button class="btn" data-view-drawing="'+esc(d.name)+'">查看 / 标注</button>' +
+      '</div>';
+    }
+    var html = '';
+    if(waitingForMe.length){
+      html += '<div class="pdf-inbox-group"><h3>待你处理（'+waitingForMe.length+'）</h3>' +
+        waitingForMe.map(function(i){ return itemHtml(i,'waiting','待处理'); }).join('') + '</div>';
+    }
+    if(sentByMeWaiting.length){
+      html += '<div class="pdf-inbox-group"><h3>你发出，等待对方处理（'+sentByMeWaiting.length+'）</h3>' +
+        sentByMeWaiting.map(function(i){ return itemHtml(i,'sent','等待对方'); }).join('') + '</div>';
+    }
+    if(!html){
+      html = '<p class="muted" style="padding:2px 0 4px;">暂时没有需要你处理、或等待对方处理的图纸。</p>';
+    }
+    el.innerHTML = html;
   }
 
   function renderPdfFromArrayBuffer(typedArray, displayName, versionTime){
@@ -1281,9 +1381,10 @@
     cur().currentDrawing = name;
     renderDrawingSelect();
     renderDrawingVersionList();
+    renderPdfInbox();
   }
 
-  function uploadDrawingFile(file, drawingName){
+  function uploadDrawingFile(file, drawingName, sentTo){
     drawingName = (drawingName || '').trim() || file.name.replace(/\.pdf$/i, '');
     var reader = new FileReader();
     reader.onload = function(){
@@ -1291,7 +1392,8 @@
       var versionEntry = {
         fileID: '', cloudPath: '',
         uploadedBy: (session.name || session.id || '匿名') + (session.role ? '（'+session.role+'）' : ''),
-        role: session.role || '', time: todayStr() + ' ' + nowTimeStr()
+        uploaderRole: session.role || '', sentTo: sentTo || '',
+        time: todayStr() + ' ' + nowTimeStr()
       };
       renderPdfFromArrayBuffer(bytes, drawingName, versionEntry.time);
       addDrawingVersion(drawingName, versionEntry);
@@ -1303,12 +1405,12 @@
           versionEntry.cloudPath = cloudPath;
           renderDrawingVersionList();
           cloudPush();
-          setPdfStatus('已上传「'+drawingName+'」并同步到云端，团队其他人登录后可以看到最新版本。', 'ok');
+          setPdfStatus('已上传「'+drawingName+'」'+(sentTo ? '并发给了'+sentTo : '') +'，同步到云端后对方登录即可在"待你处理"里看到。', 'ok');
         }).catch(function(err){
-          setPdfStatus('云端上传失败：'+(err && err.message || err)+'（可能是控制台里的"存储"还没开通，或权限没放开）；图纸目前只在你这台设备上可见。', 'err');
+          setPdfStatus('云端上传失败：'+(err && err.message || err)+'（可能是控制台里的"存储"还没开通，或权限没放开）；图纸目前只在你这台设备上可见，对方暂时收不到。', 'err');
         });
       } else {
-        setPdfStatus('已加载「'+drawingName+'」（未连接团队云端，仅本机可见，其他人暂时看不到这份图纸）。', 'ok');
+        setPdfStatus('已加载「'+drawingName+'」（未连接团队云端，仅本机可见，对方暂时收不到这份图纸）。', 'ok');
       }
     };
     reader.readAsArrayBuffer(file);
@@ -1317,15 +1419,26 @@
   function wireDrawingUI(){
     var sel = document.getElementById('pdf-drawing-select');
     var nameInput = document.getElementById('pdf-drawing-name');
+    var sendToSel = document.getElementById('pdf-send-to');
     var btn = document.getElementById('btn-pdf-upload');
     var input = document.getElementById('pdf-file-input');
+    var inbox = document.getElementById('pdf-inbox');
     if(sel) sel.addEventListener('change', function(){
       if(sel.value) selectDrawing(sel.value);
     });
     if(btn && input) btn.addEventListener('click', function(){ input.click(); });
     if(input) input.addEventListener('change', function(){
-      if(input.files && input.files[0]) uploadDrawingFile(input.files[0], nameInput ? nameInput.value : '');
+      if(input.files && input.files[0]) uploadDrawingFile(input.files[0], nameInput ? nameInput.value : '', sendToSel ? sendToSel.value : '');
       input.value = '';
+    });
+    if(inbox) inbox.addEventListener('click', function(e){
+      var btn2 = e.target.closest('[data-view-drawing]');
+      if(!btn2) return;
+      var name = btn2.getAttribute('data-view-drawing');
+      if(sel) sel.value = name;
+      selectDrawing(name);
+      var area = document.getElementById('pdf-viewer-area');
+      if(area) area.scrollIntoView({ behavior:'smooth', block:'start' });
     });
   }
 
@@ -1446,15 +1559,15 @@
     renderLineSelect();
     renderMeta(); renderAnnot(); renderDiff(); renderSchematic();
     populateReturnTypeOptions(); populateReturnNodeOptions(); renderReturns(); renderStats();
-    renderDrawingSelect(); renderDrawingVersionList(); renderPdfPins();
+    renderDrawingSelect(); renderDrawingVersionList(); renderPdfPins(); renderPdfInbox();
   }
 
-  /* ---------------- tabs ---------------- */
-  document.querySelectorAll('.tab-btn').forEach(function(btn){
+  /* ---------------- 左侧导航 ---------------- */
+  document.querySelectorAll('.nav-btn').forEach(function(btn){
     btn.addEventListener('click', function(){
-      document.querySelectorAll('.tab-btn').forEach(function(b){ b.setAttribute('aria-selected','false'); });
+      document.querySelectorAll('.nav-btn').forEach(function(b){ b.setAttribute('aria-selected','false'); b.classList.remove('active'); });
       document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('active'); });
-      btn.setAttribute('aria-selected','true');
+      btn.setAttribute('aria-selected','true'); btn.classList.add('active');
       document.getElementById(btn.dataset.target).classList.add('active');
     });
   });
@@ -1750,6 +1863,13 @@
     if(sel && session.role && Array.from(sel.options).some(function(o){ return o.value === session.role; })){
       sel.value = session.role;
     }
+    var sendToSel = document.getElementById('pdf-send-to');
+    if(sendToSel){
+      var suggested = session.role === '配管专业' ? '应力专业' : (session.role === '应力专业' ? '配管专业' : '');
+      if(suggested && Array.from(sendToSel.options).some(function(o){ return o.value === suggested; })){
+        sendToSel.value = suggested;
+      }
+    }
   }
   function showApp(){
     var overlay = document.getElementById('login-overlay');
@@ -1760,6 +1880,7 @@
     if(idEl) idEl.textContent = (session.name || session.id) + '（' + session.role + '）';
     cloud.nickname = (session.name || session.id) + '(' + session.role + ')';
     applySessionToForm();
+    renderPdfInbox();
   }
   function showLogin(){
     var overlay = document.getElementById('login-overlay');
