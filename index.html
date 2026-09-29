@@ -1301,6 +1301,11 @@
 
   /* ---------------- PDF 图纸标注 + 图纸库（可选功能） ---------------- */
   var pdfState = { name: '', version: '', doc: null, scale: 1, pendingPin: null };
+  /* 本机 PDF 字节缓存：一次上传多张图纸时，每份文件读到的内容都留一份在内存里，
+     这样即使云端同步还没完成/失败，本机切换查看不同图纸时也总能显示正确的那一份，
+     不会因为云端取不到就误显示上一张图纸的旧内容。key = 管线id + '::' + 图纸名 + '::' + 版本时间。 */
+  var localPdfCache = {};
+  function pdfCacheKey(lineId, name, time){ return lineId + '::' + name + '::' + time; }
   var editingReturnId = null;
   /* 返回条件按图纸分组展开/收起状态：一次上传多张图纸后，待处理会很多，
      按图纸折叠起来更清楚。key = 管线id + '::' + 图纸名（没关联图纸的归到 __none__）。 */
@@ -1433,8 +1438,12 @@
     if(!el) return;
     var d = findDrawing(cur().currentDrawing);
     if(!d || !d.versions.length){ el.textContent = ''; return; }
+    var lastIdx = d.versions.length - 1;
     el.innerHTML = '版本记录：' + d.versions.map(function(v, i){
-      return (i+1)+'. '+esc(v.time)+' · '+esc(v.uploadedBy||'')+(v.sentTo ? '　→ 发给 '+esc(v.sentTo) : '')+(v.fileID ? '（已同步）' : '（仅本机，未同步）');
+      var retryBtn = (!v.fileID && i === lastIdx)
+        ? ' <button class="btn" style="padding:2px 8px; font-size:11px;" data-retry-sync="'+esc(d.name)+'">重新同步到云端</button>'
+        : '';
+      return (i+1)+'. '+esc(v.time)+' · '+esc(v.uploadedBy||'')+(v.sentTo ? '　→ 发给 '+esc(v.sentTo) : '')+(v.fileID ? '（已同步）' : '（仅本机，未同步）')+retryBtn;
     }).join('　');
   }
 
@@ -1622,15 +1631,27 @@
     var d = findDrawing(name);
     if(!d || !d.versions.length) return;
     var v = d.versions[d.versions.length - 1];
+    var cacheKey = pdfCacheKey(cur().id, name, v.time);
+    var cachedBytes = localPdfCache[cacheKey];
+    if(cachedBytes){
+      /* 本机刚上传过这一份，直接用内存里的内容显示，不用等/依赖云端，
+         这样批量上传多张图纸后来回切换查看，每一张都能显示对应的正确内容。 */
+      renderPdfFromArrayBuffer(cachedBytes, name, v.time);
+      setPdfStatus('已加载「'+name+'」（本机缓存'+(v.fileID ? '，已同步到云端' : '，尚未同步到云端，仅本机可见')+'），点击图纸任意位置即可标注返回条件的图上坐标。', 'ok');
+      return;
+    }
     if(!v.fileID){
-      setPdfStatus('该图纸最新版本还没有同步到云端存储（可能仍在上传，或上传失败/未连接云端），暂时无法在这台设备打开。', 'err');
+      resetPdfViewer();
+      setPdfStatus('该图纸最新版本还没有同步到云端存储（可能仍在上传、上传失败，或未连接云端），暂时无法在这台设备打开；如果这是你自己刚上传的图纸，可以在下面"版本记录"里点"重新同步到云端"再试一次。', 'err');
       return;
     }
     setPdfStatus('正在从云端加载「'+name+'」…');
     fetchDrawingVersionBytes(v).then(function(bytes){
+      localPdfCache[cacheKey] = bytes;
       renderPdfFromArrayBuffer(bytes, name, v.time);
       setPdfStatus('已加载「'+name+'」（'+(v.uploadedBy||'')+' 于 '+v.time+' 上传），点击图纸任意位置即可标注返回条件的图上坐标。', 'ok');
     }).catch(function(err){
+      resetPdfViewer();
       setPdfStatus('加载失败：'+(err && err.message || err), 'err');
     });
   }
@@ -1659,6 +1680,7 @@
         stage: sentTo ? STAGE_WAITING : '',
         receivedBy: '', receivedTime: '', returnedBy: '', returnedTime: ''
       };
+      localPdfCache[pdfCacheKey(cur().id, drawingName, versionEntry.time)] = bytes;
       renderPdfFromArrayBuffer(bytes, drawingName, versionEntry.time);
       addDrawingVersion(drawingName, versionEntry);
       if(onRegistered) onRegistered(drawingName, true);
@@ -1669,10 +1691,12 @@
           versionEntry.fileID = res.fileID;
           versionEntry.cloudPath = cloudPath;
           renderDrawingVersionList();
+          renderDrawingOverview();
           cloudPush();
           setPdfStatus('已上传「'+drawingName+'」'+(sentTo ? '并发给了'+sentTo : '') +'，同步到云端后对方登录即可在"待你处理"里看到。', 'ok');
         }).catch(function(err){
-          setPdfStatus('云端上传失败：'+(err && err.message || err)+'（可能是控制台里的"存储"还没开通，或权限没放开）；图纸目前只在你这台设备上可见，对方暂时收不到。', 'err');
+          renderDrawingVersionList();
+          setPdfStatus('云端上传失败：'+(err && err.message || err)+'（可能是控制台里的"存储"还没开通，或权限没放开，或者是一次选太多份网络扛不住）；图纸暂时只在你这台设备上可见，对方收不到，可以在下面"版本记录"里点"重新同步到云端"再试一次。', 'err');
         });
       } else {
         setPdfStatus('已加载「'+drawingName+'」（未连接团队云端，仅本机可见，对方暂时收不到这份图纸）。', 'ok');
@@ -1683,6 +1707,36 @@
       setPdfStatus('读取「'+drawingName+'」失败，已跳过。', 'err');
     };
     reader.readAsArrayBuffer(file);
+  }
+
+  function retryCloudSync(name){
+    var d = findDrawing(name);
+    var v = latestVersion(d);
+    if(!v) return;
+    var cacheKey = pdfCacheKey(cur().id, name, v.time);
+    var bytes = localPdfCache[cacheKey];
+    if(!bytes){
+      setPdfStatus('本机没有「'+name+'」这份文件的缓存（可能不是在这台设备上传的，或者已经刷新过页面），无法重新同步，请让上传的人重新上传一次。', 'err');
+      return;
+    }
+    if(!cloud.ready || !cloud.app){
+      setPdfStatus('当前未连接团队云端，暂时无法同步。', 'err');
+      return;
+    }
+    setPdfStatus('正在重新同步「'+name+'」到云端…');
+    var blob = new Blob([bytes], { type: 'application/pdf' });
+    var cloudPath = 'drawings/' + Date.now() + '_retry_' + safeFileName(name) + '.pdf';
+    cloud.app.uploadFile({ cloudPath: cloudPath, filePath: blob }).then(function(res){
+      v.fileID = res.fileID;
+      v.cloudPath = cloudPath;
+      renderDrawingVersionList();
+      renderPdfInbox();
+      renderDrawingOverview();
+      cloudPush();
+      setPdfStatus('「'+name+'」已重新同步到云端，团队其他人现在登录就能打开了。', 'ok');
+    }).catch(function(err){
+      setPdfStatus('重新同步失败：'+(err && err.message || err), 'err');
+    });
   }
 
   function wireDrawingUI(){
@@ -1696,6 +1750,12 @@
       if(sel.value) selectDrawing(sel.value);
     });
     if(btn && input) btn.addEventListener('click', function(){ input.click(); });
+    var versionListEl = document.getElementById('pdf-version-list');
+    if(versionListEl) versionListEl.addEventListener('click', function(e){
+      var retryBtn = e.target.closest('[data-retry-sync]');
+      if(!retryBtn) return;
+      retryCloudSync(retryBtn.getAttribute('data-retry-sync'));
+    });
     if(input) input.addEventListener('change', function(){
       var files = input.files ? Array.prototype.slice.call(input.files) : [];
       var sentTo = sendToSel ? sendToSel.value : '';
