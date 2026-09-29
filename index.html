@@ -283,6 +283,17 @@
   .node-badge{background:var(--surface-sunken); color:var(--ink-soft);}
   .return-summary{display:flex; gap:16px; margin-bottom:14px; font-size:12.5px; color:var(--ink-soft); flex-wrap:wrap;}
   .return-summary b{color:var(--ink); font-family:var(--font-mono);}
+  .return-group{margin-bottom:14px;}
+  .return-group-header{
+    display:flex; align-items:center; gap:10px; cursor:pointer; user-select:none;
+    padding:10px 14px; border-radius:10px; background:var(--surface-sunken);
+    border:1px solid var(--border); transition:background .15s;
+  }
+  .return-group-header:hover{background:var(--accent-soft);}
+  .return-group-arrow{font-size:12px; color:var(--ink-soft); width:12px; text-align:center; flex-shrink:0;}
+  .return-group-title{font-weight:700; font-size:13.5px; color:var(--ink); flex:1;}
+  .return-group-count{font-size:12px; color:var(--ink-soft); white-space:nowrap;}
+  .return-group-body{padding:12px 0 0 18px;}
 
   /* ---------- PDF 图纸标注 ---------- */
   #pdf-viewer-wrap{position:relative; display:inline-block; max-width:100%; border:1px solid var(--border); border-radius:10px; overflow:auto; background:var(--surface-sunken); line-height:0;}
@@ -791,12 +802,25 @@
      "查看网页源代码"就能看到明文，不具备真正的账号安全性 —— 仅适合组内 demo，
      不要用来保护真正敏感的密码。请把下面示例改成你们团队真实的工号/姓名/密码。 */
   var TEAM_ROSTER = [
-    { id:'10086', name:'张三', role:'配管专业', password:'1234' },
-    { id:'10087', name:'李四', role:'应力专业', password:'1234' },
-    { id:'10088', name:'王五', role:'项目管理', password:'1234' }
+    { id:'S001', name:'李工', role:'配管专业', password:'1234', email:'duo6050862@gmail.com' },
+    { id:'S002', name:'王工', role:'应力专业', password:'1234', email:'duo6050862@gmail.com' }
   ];
   var LOGIN_KEY = 'piping-tool-session';
   var session = { id:'', name:'', role:'' };
+
+  /* 邮箱联系：按"专业"从花名册里查邮箱，生成 mailto 链接（点了直接跳转到本机默认邮件客户端，
+     不需要搭邮件服务器）。一个专业如果配了多个人，会一起作为收件人。 */
+  function emailsForRole(role){
+    return TEAM_ROSTER.filter(function(m){ return m.role === role && m.email; }).map(function(m){ return m.email; });
+  }
+  function mailtoLink(role, subject, body){
+    var emails = emailsForRole(role);
+    if(!emails.length) return '';
+    var params = [];
+    if(subject) params.push('subject=' + encodeURIComponent(subject));
+    if(body) params.push('body=' + encodeURIComponent(body));
+    return 'mailto:' + emails.join(',') + (params.length ? ('?' + params.join('&')) : '');
+  }
 
   /* ---------------- 图纸库（可选，用云开发"云存储"保存 PDF 文件本身）----------------
      数据库里只放"哪份图纸、哪个版本、谁传的、文件在云存储的哪个位置"这些元数据
@@ -1262,6 +1286,10 @@
   /* ---------------- PDF 图纸标注 + 图纸库（可选功能） ---------------- */
   var pdfState = { name: '', version: '', doc: null, scale: 1, pendingPin: null };
   var editingReturnId = null;
+  /* 返回条件按图纸分组展开/收起状态：一次上传多张图纸后，待处理会很多，
+     按图纸折叠起来更清楚。key = 管线id + '::' + 图纸名（没关联图纸的归到 __none__）。 */
+  var expandedReturnGroups = {};
+  function returnGroupKey(lineId, drawingKey){ return lineId + '::' + drawingKey; }
 
   function setPdfStatus(text, kind){
     var el = document.getElementById('pdf-status');
@@ -1334,6 +1362,7 @@
     pdfState.pendingPin = null;
     hideQuickAnnotPopup();
     syncPinPendingUI();
+    expandedReturnGroups[returnGroupKey(c.id, rec.pdfName || '__none__')] = true;
     renderReturns();
     renderPdfPins();
     cloudPush();
@@ -1409,10 +1438,17 @@
     });
     function itemHtml(item, cls, tag){
       var d = item.d, v = item.v;
+      var contactRole = cls === 'waiting' ? v.uploaderRole : v.sentTo;
+      var contactLabel = cls === 'waiting' ? '邮件联系上传人' : '邮件提醒对方';
+      var subject = '关于图纸「' + d.name + '」';
+      var body = '图纸「' + d.name + '」（' + (v.time || '') + ' 上传）' +
+        (cls === 'waiting' ? '，麻烦确认一下相关内容。' : '，麻烦抽空处理一下，谢谢！');
+      var mailto = contactRole ? mailtoLink(contactRole, subject, body) : '';
       return '<div class="pdf-inbox-item '+cls+'">' +
         '<span class="chip-tag '+(cls==='waiting'?'from-stress':'from-piping')+'">'+tag+'</span>' +
         '<b>'+esc(d.name)+'</b>' +
         '<span class="muted">'+esc(v.uploadedBy||'')+' 于 '+esc(v.time)+' 上传'+(v.sentTo?'　→ 发给 '+esc(v.sentTo):'')+'</span>' +
+        (mailto ? '<button class="btn" data-mailto="'+esc(mailto)+'">'+contactLabel+'</button>' : '') +
         '<button class="btn" data-view-drawing="'+esc(d.name)+'">查看 / 标注</button>' +
       '</div>';
     }
@@ -1578,6 +1614,11 @@
       input.value = '';
     });
     if(inbox) inbox.addEventListener('click', function(e){
+      var mailtoBtn = e.target.closest('[data-mailto]');
+      if(mailtoBtn){
+        window.location.href = mailtoBtn.getAttribute('data-mailto');
+        return;
+      }
       var btn2 = e.target.closest('[data-view-drawing]');
       if(!btn2) return;
       var name = btn2.getAttribute('data-view-drawing');
@@ -1681,38 +1722,72 @@
     if(contentInput) contentInput.focus();
   }
 
+  function returnItemHtml(r){
+    var fromCls = r.from === '应力专业' ? 'from-stress' : 'from-piping';
+    var statusCls = r.status === '已处理' ? 'added' : 'modified';
+    var nextLabel = r.status === '已处理' ? '标记为待处理' : '标记为已处理';
+    var pos = nodePos(r.node);
+    var posText = pos ? ('('+pos.x+', '+pos.y+', '+pos.z+') mm') : '模型中未找到该节点';
+    return '<div class="return-item">' +
+      '<div class="return-top">' +
+        '<span class="status-pill node-badge">节点 '+r.node+'</span>' +
+        (r.supportTag ? '<span class="chip-tag from-piping">支架 '+esc(r.supportTag)+'</span>' : '') +
+        '<span class="chip-tag from-piping">'+esc(r.type||'—')+'</span>' +
+        '<span class="chip-tag '+fromCls+'">'+esc(r.from)+'</span>' +
+        (r.pdfX != null ? '<span class="chip-tag from-stress" title="'+esc(r.pdfName||'')+'">图上已标注</span>' : '') +
+        '<span class="muted" style="margin-left:auto">'+esc(r.rev||'')+' · '+r.date+'</span>' +
+      '</div>' +
+      '<p class="return-content">'+esc(r.content)+'</p>' +
+      '<div class="muted" style="font-size:12px; font-family:var(--font-mono); margin:0 0 10px;">' +
+        '位置：'+esc(posText)+'　载荷 X/Y/Z (kN)：'+r.loadX+' / '+r.loadY+' / '+r.loadZ +
+      '</div>' +
+      '<div class="return-bottom">' +
+        '<span class="status-pill '+statusCls+'"><span class="dot"></span>'+r.status+'</span>' +
+        '<button class="btn" data-edit-return="'+r.id+'">编辑</button>' +
+        '<button class="btn" data-toggle-return="'+r.id+'">'+nextLabel+'</button>' +
+      '</div>' +
+    '</div>';
+  }
+
   function renderReturns(){
     var listEl = document.getElementById('return-list');
     if(!listEl) return;
     var c = cur();
     var list = c.returns.slice().sort(function(a,b){ return b.id - a.id; });
     if(c.returnFilter !== 'all'){ list = list.filter(function(r){ return r.status === c.returnFilter; }); }
-    listEl.innerHTML = list.map(function(r){
-      var fromCls = r.from === '应力专业' ? 'from-stress' : 'from-piping';
-      var statusCls = r.status === '已处理' ? 'added' : 'modified';
-      var nextLabel = r.status === '已处理' ? '标记为待处理' : '标记为已处理';
-      var pos = nodePos(r.node);
-      var posText = pos ? ('('+pos.x+', '+pos.y+', '+pos.z+') mm') : '模型中未找到该节点';
-      return '<div class="return-item">' +
-        '<div class="return-top">' +
-          '<span class="status-pill node-badge">节点 '+r.node+'</span>' +
-          (r.supportTag ? '<span class="chip-tag from-piping">支架 '+esc(r.supportTag)+'</span>' : '') +
-          '<span class="chip-tag from-piping">'+esc(r.type||'—')+'</span>' +
-          '<span class="chip-tag '+fromCls+'">'+esc(r.from)+'</span>' +
-          (r.pdfX != null ? '<span class="chip-tag from-stress" title="'+esc(r.pdfName||'')+'">图上已标注</span>' : '') +
-          '<span class="muted" style="margin-left:auto">'+esc(r.rev||'')+' · '+r.date+'</span>' +
-        '</div>' +
-        '<p class="return-content">'+esc(r.content)+'</p>' +
-        '<div class="muted" style="font-size:12px; font-family:var(--font-mono); margin:0 0 10px;">' +
-          '位置：'+esc(posText)+'　载荷 X/Y/Z (kN)：'+r.loadX+' / '+r.loadY+' / '+r.loadZ +
-        '</div>' +
-        '<div class="return-bottom">' +
-          '<span class="status-pill '+statusCls+'"><span class="dot"></span>'+r.status+'</span>' +
-          '<button class="btn" data-edit-return="'+r.id+'">编辑</button>' +
-          '<button class="btn" data-toggle-return="'+r.id+'">'+nextLabel+'</button>' +
-        '</div>' +
-      '</div>';
-    }).join('') || '<p class="muted" style="padding:16px 0;">没有满足条件的记录</p>';
+
+    if(!list.length){
+      listEl.innerHTML = '<p class="muted" style="padding:16px 0;">没有满足条件的记录</p>';
+    } else {
+      // 按图纸分组：list 已按 id 倒序排列，第一次遇到某个图纸的顺序，就是这个图纸最近一次
+      // 有动静的顺序，分组自然按"最近活跃的图纸在前"排列，不用再单独排序。
+      var groupOrder = [];
+      var groups = {};
+      list.forEach(function(r){
+        var key = r.pdfName || '__none__';
+        if(!groups[key]){ groups[key] = []; groupOrder.push(key); }
+        groups[key].push(r);
+      });
+      var onlyOneGroup = groupOrder.length <= 1;
+      listEl.innerHTML = groupOrder.map(function(key){
+        var items = groups[key];
+        var pending = items.filter(function(r){ return r.status === '待处理'; }).length;
+        var done = items.length - pending;
+        var title = key === '__none__' ? '未关联具体图纸' : ('图纸：' + key);
+        var fullKey = returnGroupKey(c.id, key);
+        var expanded = onlyOneGroup || !!expandedReturnGroups[fullKey];
+        return '<div class="return-group">' +
+          '<div class="return-group-header" data-return-group="'+esc(fullKey)+'">' +
+            '<span class="return-group-arrow">'+(expanded ? '▾' : '▸')+'</span>' +
+            '<span class="return-group-title">'+esc(title)+'</span>' +
+            '<span class="return-group-count">共 '+items.length+' 条'+(pending ? '　待处理 '+pending : '')+(done ? '　已处理 '+done : '')+'</span>' +
+          '</div>' +
+          '<div class="return-group-body" style="'+(expanded ? '' : 'display:none;')+'">' +
+            items.map(returnItemHtml).join('') +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
 
     var pending = c.returns.filter(function(r){ return r.status === '待处理'; }).length;
     var done = c.returns.length - pending;
@@ -2011,6 +2086,7 @@
         newRec.pdfName = pdfState.name; newRec.pdfX = pdfState.pendingPin.x; newRec.pdfY = pdfState.pendingPin.y; newRec.pdfVersion = pdfState.version;
       }
       c.returns.push(newRec);
+      expandedReturnGroups[returnGroupKey(c.id, newRec.pdfName || '__none__')] = true;
     }
     contentInput.value = ''; supportInput.value = ''; lxInput.value = ''; lyInput.value = ''; lzInput.value = '';
     pdfState.pendingPin = null;
@@ -2030,6 +2106,13 @@
     var lz = document.getElementById('return-load-z'); if(lz) lz.value = '';
   });
   document.getElementById('return-list').addEventListener('click', function(e){
+    var groupHeader = e.target.closest('[data-return-group]');
+    if(groupHeader){
+      var gkey = groupHeader.getAttribute('data-return-group');
+      expandedReturnGroups[gkey] = !expandedReturnGroups[gkey];
+      renderReturns();
+      return;
+    }
     var toggleBtn = e.target.closest('[data-toggle-return]');
     if(toggleBtn){
       var id = Number(toggleBtn.getAttribute('data-toggle-return'));
