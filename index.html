@@ -1585,7 +1585,12 @@
     pdfState.pendingPin = null;
     syncPinPendingUI();
     hideQuickAnnotPopup();
-    window.pdfjsLib.getDocument({ data: typedArray }).promise.then(function(pdf){
+    /* PDF.js 会把传入的 ArrayBuffer 转交给它内部的 worker 线程（transfer），
+       之后原来那份数据就"detached"、不能再用了。这里的 typedArray 很可能是
+       localPdfCache 里缓存的那一份，还要留着给下次切换回来这张图纸时复用，
+       所以必须先复制一份新的再交给 PDF.js，不能把缓存的原始数据直接传进去。 */
+    var pdfBytesForRender = new Uint8Array(typedArray);
+    window.pdfjsLib.getDocument({ data: pdfBytesForRender }).promise.then(function(pdf){
       pdfState.doc = pdf;
       return pdf.getPage(1);
     }).then(function(page){
