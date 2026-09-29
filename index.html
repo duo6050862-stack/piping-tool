@@ -341,6 +341,18 @@
   .pdf-inbox-item.sent{background:var(--surface-alt);}
   .pdf-inbox-item b{font-size:13.5px;}
   .pdf-inbox-item .btn{margin-left:auto;}
+  .stage-badge{font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap;}
+  .stage-badge.stage-waiting{background:var(--warn-soft); color:var(--warn);}
+  .stage-badge.stage-processing{background:var(--accent-soft); color:var(--accent-strong);}
+  .stage-badge.stage-returned{background:var(--good-soft); color:var(--good);}
+  .drawing-overview-table{width:100%; border-collapse:collapse; font-size:12.5px; margin-bottom:6px;}
+  .drawing-overview-table th{
+    text-align:left; padding:7px 10px; color:var(--ink-soft); font-weight:600;
+    border-bottom:1px solid var(--border); white-space:nowrap;
+  }
+  .drawing-overview-table td{padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:middle;}
+  .drawing-overview-table tr:last-child td{border-bottom:none;}
+  .drawing-overview-table .btn{padding:4px 10px; font-size:12px;}
   /* ---------- login ---------- */
   .login-overlay{
     position:fixed; inset:0; background:var(--bg); z-index:100;
@@ -456,8 +468,12 @@
   <section class="panel active" id="panel-drawings">
     <div class="card">
       <h2>图纸收发</h2>
-      <p class="desc">配管专业上传管道等轴测图 PDF 时指定"发给应力专业"，应力专业登录后直接在下面"待你处理"里就能看到、打开、点选标注；标注/核实完，应力把新版本发回给配管，配管登录后同样会在自己的"待你处理"里看到——不需要再去找、去猜哪份是最新的。<span id="pdf-cloud-hint"></span></p>
+      <p class="desc">配管专业上传管道等轴测图 PDF 时指定"发给应力专业"，图纸会经过"待接收 → 处理中 → 已返回"三个阶段：应力专业先点"确认接收"，标注/核实完再点"返回给配管"；每一步配管专业都能在下面的总览表和"你发出"列表里实时看到，不用再去猜哪份是最新状态。<span id="pdf-cloud-hint"></span></p>
 
+      <h3 style="margin:18px 0 8px; font-size:14px;">图纸总览</h3>
+      <div id="drawing-overview"></div>
+
+      <h3 style="margin:18px 0 8px; font-size:14px;">收发提醒</h3>
       <div id="pdf-inbox"></div>
 
       <div class="return-form" style="margin-top:14px;">
@@ -1422,49 +1438,132 @@
     }).join('　');
   }
 
+  /* ---------------- 图纸收发：接收/处理/返回三段流程 ---------------- */
+  var STAGE_WAITING = '待接收';
+  var STAGE_PROCESSING = '处理中';
+  var STAGE_RETURNED = '已返回';
+  var STAGE_BADGE_CLASS = { '待接收':'stage-waiting', '处理中':'stage-processing', '已返回':'stage-returned' };
+
+  function latestVersion(d){
+    return (d && d.versions.length) ? d.versions[d.versions.length - 1] : null;
+  }
+  function stageBadgeHtml(stage){
+    if(!stage) return '';
+    var cls = STAGE_BADGE_CLASS[stage] || '';
+    return '<span class="stage-badge '+cls+'">'+esc(stage)+'</span>';
+  }
+  function confirmReceiveDrawing(name){
+    var d = findDrawing(name);
+    var v = latestVersion(d);
+    if(!v || v.stage !== STAGE_WAITING) return;
+    v.stage = STAGE_PROCESSING;
+    v.receivedBy = (session.name || session.id || '匿名') + (session.role ? '（'+session.role+'）' : '');
+    v.receivedTime = todayStr() + ' ' + nowTimeStr();
+    renderPdfInbox();
+    renderDrawingOverview();
+    cloudPush();
+    setPdfStatus('已确认接收「'+name+'」，对方（'+(v.uploaderRole||'')+'）会看到这个状态变化。', 'ok');
+  }
+  function returnDrawingToSender(name){
+    var d = findDrawing(name);
+    var v = latestVersion(d);
+    if(!v || v.stage !== STAGE_PROCESSING) return;
+    v.stage = STAGE_RETURNED;
+    v.returnedBy = (session.name || session.id || '匿名') + (session.role ? '（'+session.role+'）' : '');
+    v.returnedTime = todayStr() + ' ' + nowTimeStr();
+    renderPdfInbox();
+    renderDrawingOverview();
+    cloudPush();
+    setPdfStatus('已将「'+name+'」标记为已返回，'+(v.uploaderRole||'对方')+'会看到这个状态变化。', 'ok');
+  }
+
   function renderPdfInbox(){
     var el = document.getElementById('pdf-inbox');
     if(!el) return;
     var drawings = cur().drawings;
-    var waitingForMe = [], sentByMeWaiting = [];
+    var waitingForMe = [], sentByMe = [];
     drawings.forEach(function(d){
-      if(!d.versions.length) return;
-      var v = d.versions[d.versions.length - 1];
-      if(session.role && v.sentTo === session.role){
+      var v = latestVersion(d);
+      if(!v || !v.sentTo) return;
+      if(session.role && v.sentTo === session.role && v.stage !== STAGE_RETURNED){
         waitingForMe.push({ d: d, v: v });
-      } else if(session.role && v.uploaderRole === session.role && v.sentTo && v.sentTo !== session.role){
-        sentByMeWaiting.push({ d: d, v: v });
+      } else if(session.role && v.uploaderRole === session.role && v.sentTo !== session.role){
+        sentByMe.push({ d: d, v: v });
       }
     });
-    function itemHtml(item, cls, tag){
+    function actionButtonHtml(item){
       var d = item.d, v = item.v;
-      var contactRole = cls === 'waiting' ? v.uploaderRole : v.sentTo;
-      var contactLabel = cls === 'waiting' ? '邮件联系上传人' : '邮件提醒对方';
+      if(v.stage === STAGE_WAITING){
+        return '<button class="btn primary" data-confirm-receive="'+esc(d.name)+'">确认接收</button>';
+      }
+      if(v.stage === STAGE_PROCESSING){
+        return '<button class="btn primary" data-return-drawing="'+esc(d.name)+'">返回给'+esc(v.uploaderRole||'对方')+'</button>';
+      }
+      return '';
+    }
+    function itemHtml(item, cls, mailtoRole, mailtoLabel, mailtoNote, showAction){
+      var d = item.d, v = item.v;
       var subject = '关于图纸「' + d.name + '」';
-      var body = '图纸「' + d.name + '」（' + (v.time || '') + ' 上传）' +
-        (cls === 'waiting' ? '，麻烦确认一下相关内容。' : '，麻烦抽空处理一下，谢谢！');
-      var mailto = contactRole ? mailtoLink(contactRole, subject, body) : '';
+      var body = '图纸「' + d.name + '」（' + (v.time || '') + ' 上传）' + mailtoNote;
+      var mailto = mailtoRole ? mailtoLink(mailtoRole, subject, body) : '';
       return '<div class="pdf-inbox-item '+cls+'">' +
-        '<span class="chip-tag '+(cls==='waiting'?'from-stress':'from-piping')+'">'+tag+'</span>' +
+        stageBadgeHtml(v.stage) +
         '<b>'+esc(d.name)+'</b>' +
-        '<span class="muted">'+esc(v.uploadedBy||'')+' 于 '+esc(v.time)+' 上传'+(v.sentTo?'　→ 发给 '+esc(v.sentTo):'')+'</span>' +
-        (mailto ? '<button class="btn" data-mailto="'+esc(mailto)+'">'+contactLabel+'</button>' : '') +
+        '<span class="muted">'+esc(v.uploadedBy||'')+' 于 '+esc(v.time)+' 上传'+(v.sentTo?'　→ 发给 '+esc(v.sentTo):'')+
+          (v.receivedTime ? '　·　'+esc(v.receivedBy||'')+' 于 '+esc(v.receivedTime)+' 接收' : '') +
+          (v.returnedTime ? '　·　'+esc(v.returnedBy||'')+' 于 '+esc(v.returnedTime)+' 返回' : '') +
+        '</span>' +
+        (mailto ? '<button class="btn" data-mailto="'+esc(mailto)+'">'+mailtoLabel+'</button>' : '') +
+        (showAction ? actionButtonHtml(item) : '') +
         '<button class="btn" data-view-drawing="'+esc(d.name)+'">查看 / 标注</button>' +
       '</div>';
     }
     var html = '';
     if(waitingForMe.length){
       html += '<div class="pdf-inbox-group"><h3>待你处理（'+waitingForMe.length+'）</h3>' +
-        waitingForMe.map(function(i){ return itemHtml(i,'waiting','待处理'); }).join('') + '</div>';
+        waitingForMe.map(function(i){
+          return itemHtml(i, 'waiting', i.v.uploaderRole, '邮件联系上传人', '，麻烦确认一下相关内容。', true);
+        }).join('') + '</div>';
     }
-    if(sentByMeWaiting.length){
-      html += '<div class="pdf-inbox-group"><h3>你发出，等待对方处理（'+sentByMeWaiting.length+'）</h3>' +
-        sentByMeWaiting.map(function(i){ return itemHtml(i,'sent','等待对方'); }).join('') + '</div>';
+    if(sentByMe.length){
+      html += '<div class="pdf-inbox-group"><h3>你发出（'+sentByMe.length+'）</h3>' +
+        sentByMe.map(function(i){
+          return itemHtml(i, 'sent', i.v.stage !== STAGE_RETURNED ? i.v.sentTo : '', '邮件提醒对方', '，麻烦抽空处理一下，谢谢！');
+        }).join('') + '</div>';
     }
     if(!html){
-      html = '<p class="muted" style="padding:2px 0 4px;">暂时没有需要你处理、或等待对方处理的图纸。</p>';
+      html = '<p class="muted" style="padding:2px 0 4px;">暂时没有需要你处理、或你发出的图纸。</p>';
     }
     el.innerHTML = html;
+  }
+
+  function renderDrawingOverview(){
+    var el = document.getElementById('drawing-overview');
+    if(!el) return;
+    var c = cur();
+    var drawings = c.drawings.filter(function(d){ return d.versions.length; });
+    if(!drawings.length){
+      el.innerHTML = '<p class="muted" style="padding:8px 0;">当前管线还没有上传任何图纸。</p>';
+      return;
+    }
+    var rows = drawings.map(function(d){
+      var v = latestVersion(d);
+      var pending = c.returns.filter(function(r){ return r.pdfName === d.name && r.status === '待处理'; }).length;
+      var done = c.returns.filter(function(r){ return r.pdfName === d.name && r.status === '已处理'; }).length;
+      return '<tr>' +
+        '<td>'+esc(d.name)+'</td>' +
+        '<td>'+esc(v.time||'')+'</td>' +
+        '<td>'+esc(v.uploadedBy||'')+'</td>' +
+        '<td>'+esc(v.sentTo||'（未指定）')+'</td>' +
+        '<td>'+(v.stage ? stageBadgeHtml(v.stage) : '<span class="muted">—</span>')+'</td>' +
+        '<td>'+(pending ? ('<b style="color:var(--warn);">'+pending+'</b>') : '0')+' / '+(pending+done)+'</td>' +
+        '<td><button class="btn" data-view-drawing="'+esc(d.name)+'">查看 / 标注</button></td>' +
+      '</tr>';
+    }).join('');
+    el.innerHTML = '<table class="drawing-overview-table">' +
+      '<thead><tr><th>图纸</th><th>最新版本时间</th><th>上传人</th><th>发给</th><th>当前阶段</th><th>待处理/共</th><th></th></tr></thead>' +
+      '<tbody>'+rows+'</tbody>' +
+    '</table>';
   }
 
   function renderPdfFromArrayBuffer(typedArray, displayName, versionTime){
@@ -1544,6 +1643,7 @@
     renderDrawingSelect();
     renderDrawingVersionList();
     renderPdfInbox();
+    renderDrawingOverview();
   }
 
   function uploadDrawingFile(file, drawingName, sentTo, onRegistered){
@@ -1555,7 +1655,9 @@
         fileID: '', cloudPath: '',
         uploadedBy: (session.name || session.id || '匿名') + (session.role ? '（'+session.role+'）' : ''),
         uploaderRole: session.role || '', sentTo: sentTo || '',
-        time: todayStr() + ' ' + nowTimeStr()
+        time: todayStr() + ' ' + nowTimeStr(),
+        stage: sentTo ? STAGE_WAITING : '',
+        receivedBy: '', receivedTime: '', returnedBy: '', returnedTime: ''
       };
       renderPdfFromArrayBuffer(bytes, drawingName, versionEntry.time);
       addDrawingVersion(drawingName, versionEntry);
@@ -1613,19 +1715,37 @@
       }
       input.value = '';
     });
+    function handleViewDrawing(name){
+      if(sel) sel.value = name;
+      selectDrawing(name);
+      var area = document.getElementById('pdf-viewer-area');
+      if(area) area.scrollIntoView({ behavior:'smooth', block:'start' });
+    }
     if(inbox) inbox.addEventListener('click', function(e){
       var mailtoBtn = e.target.closest('[data-mailto]');
       if(mailtoBtn){
         window.location.href = mailtoBtn.getAttribute('data-mailto');
         return;
       }
+      var confirmBtn = e.target.closest('[data-confirm-receive]');
+      if(confirmBtn){
+        confirmReceiveDrawing(confirmBtn.getAttribute('data-confirm-receive'));
+        return;
+      }
+      var returnBtn = e.target.closest('[data-return-drawing]');
+      if(returnBtn){
+        returnDrawingToSender(returnBtn.getAttribute('data-return-drawing'));
+        return;
+      }
       var btn2 = e.target.closest('[data-view-drawing]');
       if(!btn2) return;
-      var name = btn2.getAttribute('data-view-drawing');
-      if(sel) sel.value = name;
-      selectDrawing(name);
-      var area = document.getElementById('pdf-viewer-area');
-      if(area) area.scrollIntoView({ behavior:'smooth', block:'start' });
+      handleViewDrawing(btn2.getAttribute('data-view-drawing'));
+    });
+    var overviewEl = document.getElementById('drawing-overview');
+    if(overviewEl) overviewEl.addEventListener('click', function(e){
+      var btn2 = e.target.closest('[data-view-drawing]');
+      if(!btn2) return;
+      handleViewDrawing(btn2.getAttribute('data-view-drawing'));
     });
     var gotoBtn = document.getElementById('btn-goto-return-form');
     if(gotoBtn) gotoBtn.addEventListener('click', function(){
@@ -1799,6 +1919,7 @@
     var statPendingSub = document.getElementById('stat-pending-returns-sub');
     if(statPending) statPending.textContent = pending + ' 项';
     if(statPendingSub) statPendingSub.textContent = '已处理 '+done+' 项';
+    renderDrawingOverview();
   }
 
   function renderStats(){
@@ -1834,7 +1955,7 @@
     renderLineSelect();
     renderMeta(); renderAnnot(); renderDiff(); renderSchematic();
     populateReturnTypeOptions(); populateReturnNodeOptions(); renderReturns(); renderStats();
-    renderDrawingSelect(); renderDrawingVersionList(); renderPdfPins(); renderPdfInbox();
+    renderDrawingSelect(); renderDrawingVersionList(); renderPdfPins(); renderPdfInbox(); renderDrawingOverview();
   syncPinPendingUI();
   }
 
