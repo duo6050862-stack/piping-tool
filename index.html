@@ -478,18 +478,21 @@
       <div id="pdf-inbox"></div>
 
       <div class="return-form" style="margin-top:14px;">
-        <select id="pdf-drawing-select" class="search" style="min-width:200px;"><option value="">— 新图纸 / 选择已有图纸 —</option></select>
-        <input type="text" id="pdf-drawing-name" class="search" placeholder="图纸名称/图号（如 8&quot;-P-10234-A3A 轴测图）" style="flex:1; min-width:220px;">
-        <select id="pdf-send-to" class="search">
-          <option value="">发给…（可不选，仅留存）</option>
-          <option>配管专业</option>
-          <option>应力专业</option>
-          <option>项目管理</option>
-        </select>
-        <button class="btn primary" id="btn-pdf-upload">上传并发送</button>
-        <input type="file" id="pdf-file-input" accept="application/pdf,.pdf" multiple style="display:none;">
+        <select id="pdf-drawing-select" class="search" style="min-width:200px;"><option value="">— 选择已有图纸查看 —</option></select>
+        <span id="drawing-upload-fields" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+          <input type="text" id="pdf-drawing-name" class="search" placeholder="图纸名称/图号（如 8&quot;-P-10234-A3A 轴测图）" style="flex:1; min-width:220px;">
+          <select id="pdf-send-to" class="search">
+            <option value="">发给…（可不选，仅留存）</option>
+            <option>配管专业</option>
+            <option>应力专业</option>
+            <option>项目管理</option>
+          </select>
+          <button class="btn primary" id="btn-pdf-upload">上传并发送</button>
+          <input type="file" id="pdf-file-input" accept="application/pdf,.pdf" multiple style="display:none;">
+        </span>
       </div>
-      <p class="muted" style="font-size:12px; margin-top:6px;">下拉框选一份已有图纸可以直接查看最新版本；"图纸名称"填新名字就是新建一份图纸，填已有名字则是给它加一个新版本并转交。点"上传并发送"时可以<b>一次选中多份 PDF</b>——多选时会自动用每份文件各自的文件名建图纸（上面的"图纸名称"栏对多选不生效），"发给…"的选择则对本次选中的所有图纸统一生效。</p>
+      <p class="muted" id="drawing-upload-hint" style="font-size:12px; margin-top:6px;">下拉框选一份已有图纸可以直接查看最新版本；"图纸名称"填新名字就是新建一份图纸，填已有名字则是给它加一个新版本并转交。点"上传并发送"时可以<b>一次选中多份 PDF</b>——多选时会自动用每份文件各自的文件名建图纸（上面的"图纸名称"栏对多选不生效），"发给…"的选择则对本次选中的所有图纸统一生效。</p>
+      <p class="muted" id="drawing-upload-restricted-msg" style="font-size:12px; margin-top:6px; display:none;">图纸的第一步上传固定由<b>配管专业</b>完成，流程从这里开始才不会乱；应力专业核实/标注完之后点上面"你发出"或"图纸总览"里的"返回给配管专业"即可，不需要（也不能）在这里自己上传图纸。</p>
       <div id="pdf-status" class="muted" style="margin-top:8px;"></div>
       <div id="pdf-version-list" class="muted" style="margin-top:4px; font-size:12px;"></div>
       <div id="pdf-viewer-area" style="display:none; margin-top:12px;">
@@ -1817,6 +1820,7 @@
       retryCloudSync(retryBtn.getAttribute('data-retry-sync'));
     });
     if(input) input.addEventListener('change', function(){
+      if(session.role !== '配管专业'){ input.value = ''; setPdfStatus('图纸上传只能由配管专业发起，请联系配管专业上传第一版图纸。', 'err'); return; }
       var files = input.files ? Array.prototype.slice.call(input.files) : [];
       var sentTo = sendToSel ? sendToSel.value : '';
       if(files.length === 1){
@@ -2455,6 +2459,19 @@
         sendToSel.value = suggested;
       }
     }
+    applyDrawingUploadPermission();
+  }
+
+  /* 图纸的"第一步上传"固定只让配管专业来做，流程才不会乱：
+     应力专业/项目管理登录后看不到、也点不了上传相关的控件，只能查看已有图纸。 */
+  function applyDrawingUploadPermission(){
+    var canUpload = session.role === '配管专业';
+    var fields = document.getElementById('drawing-upload-fields');
+    var hint = document.getElementById('drawing-upload-hint');
+    var restrictedMsg = document.getElementById('drawing-upload-restricted-msg');
+    if(fields) fields.style.display = canUpload ? '' : 'none';
+    if(hint) hint.style.display = canUpload ? '' : 'none';
+    if(restrictedMsg) restrictedMsg.style.display = canUpload ? 'none' : '';
   }
   function showApp(){
     var overlay = document.getElementById('login-overlay');
