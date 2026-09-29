@@ -294,6 +294,7 @@
   .return-group-title{font-weight:700; font-size:13.5px; color:var(--ink); flex:1;}
   .return-group-count{font-size:12px; color:var(--ink-soft); white-space:nowrap;}
   .return-group-body{padding:12px 0 0 18px;}
+  .return-group-mod-control{display:flex; align-items:center; gap:8px; margin-left:auto; flex-shrink:0;}
 
   /* ---------- PDF 图纸标注 ---------- */
   #pdf-viewer-wrap{position:relative; display:inline-block; max-width:100%; border:1px solid var(--border); border-radius:10px; overflow:auto; background:var(--surface-sunken); line-height:0;}
@@ -1380,6 +1381,7 @@
       pdfX: pdfState.pendingPin.x, pdfY: pdfState.pendingPin.y
     };
     c.returns.push(rec);
+    syncDrawingModComplete(rec.pdfName);
     pdfState.pendingPin = null;
     hideQuickAnnotPopup();
     syncPinPendingUI();
@@ -1486,6 +1488,49 @@
     setPdfStatus('已将「'+name+'」标记为已返回，'+(v.uploaderRole||'对方')+'会看到这个状态变化。', 'ok');
   }
 
+  /* ---------------- 图纸"修改是否完成"：应力专业确认，配管专业不能点 ---------------- */
+  function drawingReturnCounts(d){
+    var c = cur();
+    var items = c.returns.filter(function(r){ return r.pdfName === d.name; });
+    var pending = items.filter(function(r){ return r.status === '待处理'; }).length;
+    return { total: items.length, pending: pending, done: items.length - pending };
+  }
+  function syncDrawingModComplete(pdfName){
+    if(!pdfName) return;
+    var d = findDrawing(pdfName);
+    if(!d || !d.modComplete) return;
+    var counts = drawingReturnCounts(d);
+    if(counts.pending > 0){
+      /* 已经标记过"修改完成"，但又冒出了新的待处理项（新标注，或配管把某条改回待处理），
+         说明还没真的完成，自动撤销这个标记，避免总览表里显示的状态和实际不符。 */
+      d.modComplete = false; d.modCompleteBy = ''; d.modCompleteTime = '';
+    }
+  }
+  function markDrawingModComplete(name){
+    if(session.role !== '应力专业') return;
+    var d = findDrawing(name);
+    if(!d) return;
+    var counts = drawingReturnCounts(d);
+    if(counts.total === 0 || counts.pending > 0) return;
+    d.modComplete = true;
+    d.modCompleteBy = (session.name || session.id || '匿名') + '（应力专业）';
+    d.modCompleteTime = todayStr() + ' ' + nowTimeStr();
+    renderReturns();
+    renderDrawingOverview();
+    cloudPush();
+    setPdfStatus('已将「'+name+'」标记为修改完成，配管专业能在图纸总览里看到。', 'ok');
+  }
+  function unmarkDrawingModComplete(name){
+    if(session.role !== '应力专业') return;
+    var d = findDrawing(name);
+    if(!d || !d.modComplete) return;
+    d.modComplete = false; d.modCompleteBy = ''; d.modCompleteTime = '';
+    renderReturns();
+    renderDrawingOverview();
+    cloudPush();
+    setPdfStatus('已撤销「'+name+'」的修改完成标记。', 'ok');
+  }
+
   function renderPdfInbox(){
     var el = document.getElementById('pdf-inbox');
     if(!el) return;
@@ -1557,20 +1602,30 @@
     }
     var rows = drawings.map(function(d){
       var v = latestVersion(d);
-      var pending = c.returns.filter(function(r){ return r.pdfName === d.name && r.status === '待处理'; }).length;
-      var done = c.returns.filter(function(r){ return r.pdfName === d.name && r.status === '已处理'; }).length;
+      var counts = drawingReturnCounts(d);
+      var modHtml;
+      if(d.modComplete){
+        modHtml = '<span class="stage-badge stage-returned">已完成修改</span>';
+      } else if(counts.total === 0){
+        modHtml = '<span class="muted">暂无标注</span>';
+      } else if(counts.pending === 0){
+        modHtml = '<span class="stage-badge stage-processing">待应力确认</span>';
+      } else {
+        modHtml = '<span class="stage-badge stage-waiting">未完成</span>';
+      }
       return '<tr>' +
         '<td>'+esc(d.name)+'</td>' +
         '<td>'+esc(v.time||'')+'</td>' +
         '<td>'+esc(v.uploadedBy||'')+'</td>' +
         '<td>'+esc(v.sentTo||'（未指定）')+'</td>' +
         '<td>'+(v.stage ? stageBadgeHtml(v.stage) : '<span class="muted">—</span>')+'</td>' +
-        '<td>'+(pending ? ('<b style="color:var(--warn);">'+pending+'</b>') : '0')+' / '+(pending+done)+'</td>' +
+        '<td>'+modHtml+'</td>' +
+        '<td>'+(counts.pending ? ('<b style="color:var(--warn);">'+counts.pending+'</b>') : '0')+' / '+counts.total+'</td>' +
         '<td><button class="btn" data-view-drawing="'+esc(d.name)+'">查看 / 标注</button></td>' +
       '</tr>';
     }).join('');
     el.innerHTML = '<table class="drawing-overview-table">' +
-      '<thead><tr><th>图纸</th><th>最新版本时间</th><th>上传人</th><th>发给</th><th>当前阶段</th><th>待处理/共</th><th></th></tr></thead>' +
+      '<thead><tr><th>图纸</th><th>最新版本时间</th><th>上传人</th><th>发给</th><th>当前阶段</th><th>修改状态</th><th>待处理/共</th><th></th></tr></thead>' +
       '<tbody>'+rows+'</tbody>' +
     '</table>';
   }
@@ -1663,7 +1718,7 @@
 
   function addDrawingVersion(name, versionEntry){
     var d = findDrawing(name);
-    if(!d){ d = { name: name, versions: [] }; cur().drawings.push(d); }
+    if(!d){ d = { name: name, versions: [], modComplete: false, modCompleteBy: '', modCompleteTime: '' }; cur().drawings.push(d); }
     d.versions.push(versionEntry);
     cur().currentDrawing = name;
     renderDrawingSelect();
@@ -1929,7 +1984,7 @@
       '<div class="return-bottom">' +
         '<span class="status-pill '+statusCls+'"><span class="dot"></span>'+r.status+'</span>' +
         '<button class="btn" data-edit-return="'+r.id+'">编辑</button>' +
-        '<button class="btn" data-toggle-return="'+r.id+'">'+nextLabel+'</button>' +
+        (session.role === '配管专业' ? '<button class="btn" data-toggle-return="'+r.id+'">'+nextLabel+'</button>' : '') +
       '</div>' +
     '</div>';
   }
@@ -1961,11 +2016,24 @@
         var title = key === '__none__' ? '未关联具体图纸' : ('图纸：' + key);
         var fullKey = returnGroupKey(c.id, key);
         var expanded = onlyOneGroup || !!expandedReturnGroups[fullKey];
+        var d = key === '__none__' ? null : findDrawing(key);
+        var modControlHtml = '';
+        if(d){
+          if(d.modComplete){
+            modControlHtml = '<span class="stage-badge stage-returned">已完成修改</span>' +
+              (session.role === '应力专业' ? '<button class="btn" data-unmark-mod-complete="'+esc(d.name)+'" style="padding:3px 9px; font-size:11px;">撤销</button>' : '');
+          } else if(session.role === '应力专业'){
+            modControlHtml = pending === 0
+              ? '<button class="btn primary" data-mark-mod-complete="'+esc(d.name)+'" style="padding:4px 10px; font-size:12px;">标记图纸修改完成</button>'
+              : '<span class="muted" style="font-size:11.5px;">还有 '+pending+' 条待处理，处理完才能标记完成</span>';
+          }
+        }
         return '<div class="return-group">' +
-          '<div class="return-group-header" data-return-group="'+esc(fullKey)+'">' +
-            '<span class="return-group-arrow">'+(expanded ? '▾' : '▸')+'</span>' +
-            '<span class="return-group-title">'+esc(title)+'</span>' +
-            '<span class="return-group-count">共 '+items.length+' 条'+(pending ? '　待处理 '+pending : '')+(done ? '　已处理 '+done : '')+'</span>' +
+          '<div class="return-group-header">' +
+            '<span class="return-group-arrow" data-return-group="'+esc(fullKey)+'" style="cursor:pointer;">'+(expanded ? '▾' : '▸')+'</span>' +
+            '<span class="return-group-title" data-return-group="'+esc(fullKey)+'" style="cursor:pointer;">'+esc(title)+'</span>' +
+            '<span class="return-group-count" data-return-group="'+esc(fullKey)+'" style="cursor:pointer;">共 '+items.length+' 条'+(pending ? '　待处理 '+pending : '')+(done ? '　已处理 '+done : '')+'</span>' +
+            (modControlHtml ? '<span class="return-group-mod-control">'+modControlHtml+'</span>' : '') +
           '</div>' +
           '<div class="return-group-body" style="'+(expanded ? '' : 'display:none;')+'">' +
             items.map(returnItemHtml).join('') +
@@ -2272,6 +2340,7 @@
         newRec.pdfName = pdfState.name; newRec.pdfX = pdfState.pendingPin.x; newRec.pdfY = pdfState.pendingPin.y; newRec.pdfVersion = pdfState.version;
       }
       c.returns.push(newRec);
+      syncDrawingModComplete(newRec.pdfName);
       expandedReturnGroups[returnGroupKey(c.id, newRec.pdfName || '__none__')] = true;
     }
     contentInput.value = ''; supportInput.value = ''; lxInput.value = ''; lyInput.value = ''; lzInput.value = '';
@@ -2301,14 +2370,29 @@
     }
     var toggleBtn = e.target.closest('[data-toggle-return]');
     if(toggleBtn){
+      if(session.role !== '配管专业') return; /* 标为已处理/待处理只有配管专业能点，这里再兜底一次 */
       var id = Number(toggleBtn.getAttribute('data-toggle-return'));
       var item = cur().returns.filter(function(r){ return r.id === id; })[0];
-      if(item){ item.status = item.status === '已处理' ? '待处理' : '已处理'; renderReturns(); cloudPush(); }
+      if(item){
+        item.status = item.status === '已处理' ? '待处理' : '已处理';
+        syncDrawingModComplete(item.pdfName);
+        renderReturns(); cloudPush();
+      }
       return;
     }
     var editBtn = e.target.closest('[data-edit-return]');
     if(editBtn){
       startEditReturn(Number(editBtn.getAttribute('data-edit-return')));
+      return;
+    }
+    var markBtn = e.target.closest('[data-mark-mod-complete]');
+    if(markBtn){
+      markDrawingModComplete(markBtn.getAttribute('data-mark-mod-complete'));
+      return;
+    }
+    var unmarkBtn = e.target.closest('[data-unmark-mod-complete]');
+    if(unmarkBtn){
+      unmarkDrawingModComplete(unmarkBtn.getAttribute('data-unmark-mod-complete'));
     }
   });
 
